@@ -1,5 +1,4 @@
 import { useState } from "react";
-import logo from "./logo.png";
 
 /*
   ========================================
@@ -289,7 +288,7 @@ export default function Commissions() {
       {/* LOGO */}
       <div style={{ textAlign: "center", marginBottom: 32 }}>
         <img
-          src={logo}
+          src="/logo.png"
           alt="Visual Frequencies Studios"
           style={{ maxWidth: 200, width: "100%", height: "auto" }}
         />
