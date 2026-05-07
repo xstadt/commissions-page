@@ -1,4 +1,5 @@
 import { useState } from "react";
+import logo from "./logo.png";
 
 /*
   ========================================
@@ -8,16 +9,6 @@ import { useState } from "react";
 
 // Change this to "closed" when you're not taking requests
 const COMMISSION_STATUS = "open";
-
-// Your terms — edit these to match your vibe
-const TERMS = [
-  "50% deposit to reserve your spot, the rest on completion.",
-  "Minor adjustments during the sketch phase are included — larger changes after painting starts may have an additional cost.",
-  "Finished work may be featured in the portfolio unless otherwise agreed.",
-  "Turnaround times are estimates — I'll keep you updated along the way.",
-  "Commercial use licensing is available, just let me know upfront.",
-  "Refunds are available anytime before painting begins.",
-];
 
 /*
   ========================================
@@ -41,12 +32,12 @@ export default function Commissions() {
   return (
     <div className="page">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=Nunito:ital,wght@0,300;0,400;0,600;0,700;1,300;1,400&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
         :root {
-          --bg: #1a1714;
-          --surface: #242019;
-          --border: #3a342b;
+          --bg: #0e0d0b;
+          --surface: #181613;
+          --border: #2e2a24;
           --text: #e8dfd4;
           --text-dim: #9a8e82;
           --sage: #8fad8b;
@@ -54,37 +45,22 @@ export default function Commissions() {
           --dusty-rose: #d4a0a0;
           --warm-gold: #dbc078;
           --soft-teal: #7fb5b0;
-          --blush: #e8c9b8;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
         .page {
-          font-family: 'Nunito', sans-serif;
+          font-family: 'Inter', sans-serif;
           background: var(--bg);
           color: var(--text);
           min-height: 100vh;
-          padding: 24px 20px 40px;
+          padding: 40px 20px 40px;
           max-width: 720px;
           margin: 0 auto;
-          position: relative;
-          overflow: hidden;
-        }
-
-        /* ---- WATERCOLOR BLOBS ---- */
-        .blob {
-          position: fixed;
-          border-radius: 50%;
-          filter: blur(80px);
-          opacity: 0.15;
-          pointer-events: none;
-          z-index: 0;
         }
 
         /* ---- STATUS BADGE ---- */
         .status {
-          position: relative;
-          z-index: 1;
           display: inline-flex;
           align-items: center;
           gap: 8px;
@@ -111,20 +87,16 @@ export default function Commissions() {
           height: 8px;
           border-radius: 50%;
           background: currentColor;
-          animation: breathe 3s ease-in-out infinite;
-        }
-        @keyframes breathe {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.5; transform: scale(0.85); }
         }
 
         /* ---- HERO ---- */
-        .hero { position: relative; z-index: 1; margin-bottom: 48px; }
+        .hero { margin-bottom: 48px; }
         .hero-title {
-          font-family: 'Caveat', cursive;
-          font-size: clamp(42px, 10vw, 72px);
-          font-weight: 700;
-          line-height: 1.05;
+          font-family: 'Inter', sans-serif;
+          font-size: clamp(36px, 9vw, 64px);
+          font-weight: 800;
+          line-height: 1.1;
+          letter-spacing: -1.5px;
           margin-bottom: 20px;
           color: var(--text);
         }
@@ -148,15 +120,15 @@ export default function Commissions() {
 
         /* ---- SECTIONS ---- */
         .section-label {
-          font-family: 'Caveat', cursive;
-          font-size: 22px;
+          font-family: 'Inter', sans-serif;
+          font-size: 13px;
           font-weight: 600;
+          letter-spacing: 3px;
+          text-transform: uppercase;
           margin-bottom: 20px;
         }
         section {
           margin-bottom: 56px;
-          position: relative;
-          z-index: 1;
         }
 
         /* ---- WHAT YOU GET BLURB ---- */
@@ -189,7 +161,6 @@ export default function Commissions() {
           font-weight: 600;
           border: 1px solid var(--border);
           color: var(--text-dim);
-          transition: all 0.25s ease;
         }
         .tag:nth-child(1) { border-color: var(--lavender); color: #c9b8da; }
         .tag:nth-child(2) { border-color: var(--sage); color: #a3c9a0; }
@@ -205,14 +176,12 @@ export default function Commissions() {
           padding: 20px 0;
           border-bottom: 1px solid var(--border);
           align-items: flex-start;
-          transition: padding-left 0.25s ease;
         }
         .step:last-child { border-bottom: none; }
-        .step:hover { padding-left: 6px; }
         .step-num {
-          font-family: 'Caveat', cursive;
-          font-size: 36px;
-          font-weight: 700;
+          font-family: 'Inter', sans-serif;
+          font-size: 28px;
+          font-weight: 800;
           color: var(--border);
           flex-shrink: 0;
           width: 44px;
@@ -249,9 +218,10 @@ export default function Commissions() {
         }
         .field label {
           display: block;
-          font-family: 'Caveat', cursive;
-          font-size: 18px;
+          font-family: 'Inter', sans-serif;
+          font-size: 13px;
           font-weight: 600;
+          letter-spacing: 0.5px;
           color: var(--text);
           margin-bottom: 6px;
         }
@@ -263,15 +233,13 @@ export default function Commissions() {
           border-radius: 12px;
           padding: 12px 14px;
           color: var(--text);
-          font-family: 'Nunito', sans-serif;
+          font-family: 'Inter', sans-serif;
           font-size: 14px;
           outline: none;
-          transition: border-color 0.25s ease, box-shadow 0.25s ease;
         }
         .field input:focus,
         .field textarea:focus {
           border-color: var(--sage);
-          box-shadow: 0 0 0 3px rgba(143, 173, 139, 0.12);
         }
         .field textarea {
           min-height: 130px;
@@ -285,21 +253,16 @@ export default function Commissions() {
           padding: 16px;
           border: none;
           border-radius: 99px;
-          font-family: 'Caveat', cursive;
+          font-family: 'Inter', sans-serif;
           font-weight: 700;
-          font-size: 22px;
-          color: #1a1714;
+          font-size: 15px;
+          color: #0e0d0b;
           background: linear-gradient(135deg, var(--sage), var(--soft-teal), var(--lavender));
           cursor: pointer;
-          transition: transform 0.2s ease, box-shadow 0.2s ease;
           margin-top: 8px;
-          letter-spacing: 0.5px;
+          letter-spacing: 1px;
+          text-transform: uppercase;
         }
-        .submit-btn:hover {
-          transform: scale(1.02);
-          box-shadow: 0 6px 28px rgba(143, 173, 139, 0.3);
-        }
-        .submit-btn:active { transform: scale(0.98); }
 
         /* ---- SUCCESS STATE ---- */
         .success {
@@ -308,9 +271,9 @@ export default function Commissions() {
         }
         .success-icon { font-size: 48px; margin-bottom: 12px; }
         .success-title {
-          font-family: 'Caveat', cursive;
+          font-family: 'Inter', sans-serif;
           font-weight: 700;
-          font-size: 32px;
+          font-size: 24px;
           margin-bottom: 8px;
           color: var(--text);
         }
@@ -321,41 +284,16 @@ export default function Commissions() {
           font-weight: 300;
         }
 
-        /* ---- TERMS ---- */
-        .term {
-          display: flex;
-          gap: 10px;
-          padding: 12px 0;
-          border-bottom: 1px solid var(--border);
-          font-size: 13px;
-          color: var(--text-dim);
-          line-height: 1.7;
-          font-weight: 300;
-          transition: color 0.2s, padding-left 0.2s;
-        }
-        .term:last-child { border-bottom: none; }
-        .term:hover { color: var(--text); padding-left: 6px; }
-        .term-dot { color: var(--lavender); flex-shrink: 0; margin-top: 2px; }
-
-        /* ---- FOOTER ---- */
-        .footer {
-          text-align: center;
-          padding-top: 32px;
-          border-top: 1px solid var(--border);
-          font-family: 'Caveat', cursive;
-          font-size: 18px;
-          color: var(--border);
-          position: relative;
-          z-index: 1;
-        }
       `}</style>
 
-      {/* WATERCOLOR BACKGROUND BLOBS */}
-      <div className="blob" style={{ width: 300, height: 300, background: "var(--lavender)", top: -60, right: -80 }} />
-      <div className="blob" style={{ width: 250, height: 250, background: "var(--sage)", top: 300, left: -100 }} />
-      <div className="blob" style={{ width: 280, height: 280, background: "var(--dusty-rose)", top: 700, right: -60 }} />
-      <div className="blob" style={{ width: 220, height: 220, background: "var(--warm-gold)", top: 1100, left: -40 }} />
-      <div className="blob" style={{ width: 260, height: 260, background: "var(--soft-teal)", top: 1500, right: -90 }} />
+      {/* LOGO */}
+      <div style={{ textAlign: "center", marginBottom: 32 }}>
+        <img
+          src={logo}
+          alt="Visual Frequencies Studios"
+          style={{ maxWidth: 200, width: "100%", height: "auto" }}
+        />
+      </div>
 
       {/* STATUS */}
       <div className={`status ${COMMISSION_STATUS}`}>
@@ -370,10 +308,10 @@ export default function Commissions() {
           <span className="flow">Studios</span>
         </h1>
         <p className="hero-sub">
-          Original handpainted watercolor — made by a fan, for fans.
+          Original handpainted mixed media art — made by a fan, for fans.
           From <em>gig posters</em> and <em>album art</em> to <em>prints
           and promotional pieces</em>, every commission is a one-of-a-kind
-          original painted from scratch.
+          original created from scratch.
         </p>
       </div>
 
@@ -384,9 +322,9 @@ export default function Commissions() {
         </div>
         <div className="offerings">
           <p>
-            Every piece is <strong>handpainted watercolor</strong> with a
+            Every piece is <strong>handpainted mixed media</strong> with a
             faded psychedelic aesthetic — soft washes, natural color bleeds,
-            and muted tones with a tie-dye warmth. No two paintings come
+            and muted tones with a tie-dye warmth. No two pieces come
             out the same, and that's by design.
           </p>
           <div className="tag-row">
@@ -407,9 +345,10 @@ export default function Commissions() {
         <div className="steps">
           {[
             { t: "Reach Out", d: "Fill out the form below with your idea. A detailed brief is great, but a rough concept works too." },
-            { t: "Get a Quote", d: "I'll follow up within a couple of days with a custom quote and we'll work out the details." },
-            { t: "Sketch Approval", d: "You'll receive a pencil sketch before any paint goes down. Revisions happen at this stage." },
-            { t: "Paint & Deliver", d: "Once the sketch is approved, I'll bring it to life in watercolor and get the finished piece to you." },
+            { t: "Brainstorming Sketch", d: "We'll explore directions together and I'll put together some initial concepts based on your vision." },
+            { t: "Boring Business Stuff", d: "We'll sort out the details — timeline, sizing, usage, and everything else so we're on the same page." },
+            { t: "Sketch / Design Approval", d: "You'll see a refined sketch before any final work begins. We lock it in here." },
+            { t: "Paint & Deliver", d: "Once approved, I'll bring it to life and get the finished piece to you." },
           ].map((s, i) => (
             <div className="step" key={i}>
               <div className="step-num">{i + 1}</div>
@@ -446,7 +385,7 @@ export default function Commissions() {
               </div>
               <div className="field">
                 <label>Email</label>
-                <input type="email" placeholder="Where to send your quote" value={form.email} onChange={update("email")} />
+                <input type="email" placeholder="Where to reach you" value={form.email} onChange={update("email")} />
               </div>
             </div>
 
@@ -477,21 +416,6 @@ export default function Commissions() {
         )}
       </section>
 
-      {/* THE FINE PRINT */}
-      <section>
-        <div className="section-label" style={{ color: "var(--warm-gold)" }}>
-          ~ the ground rules
-        </div>
-        {TERMS.map((t, i) => (
-          <div className="term" key={i}>
-            <span className="term-dot">~</span>
-            {t}
-          </div>
-        ))}
-      </section>
-
-      {/* FOOTER */}
-      <div className="footer">Visual Frequencies Studios ~</div>
     </div>
   );
 }
