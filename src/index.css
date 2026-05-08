@@ -1,1 +1,5 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
+html, body, #root {
+    background: #0e0d0b;
+    min-height: 100vh;
+}
