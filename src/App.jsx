@@ -1328,9 +1328,9 @@ function AboutPage() {
 // TABS
 // ==========================================
 const TABS = [
-  { id: "commissions", label: "Commissions", component: CommissionsPage },
-{ id: "bottles", label: "Water Bottles", component: WaterBottlePage },
-{ id: "gallery", label: "Gallery", component: GalleryPage },
+  { id: "gallery", label: "Gallery", component: GalleryPage },
+{ id: "bottles", label: "Store", component: WaterBottlePage },
+{ id: "commissions", label: "Commissions", component: CommissionsPage },
 { id: "about", label: "About", component: AboutPage },
 ];
 
@@ -1338,7 +1338,7 @@ const TABS = [
 // MAIN APP
 // ==========================================
 export default function App() {
-  const [activeTab, setActiveTab] = useState("commissions");
+  const [activeTab, setActiveTab] = useState("gallery");
   const [scrolled, setScrolled] = useState(false);
   const ActiveComponent = TABS.find((t) => t.id === activeTab)?.component || TABS[0].component;
 
@@ -1545,9 +1545,10 @@ export default function App() {
         <button key={tab.id} className={`bottomnav-btn${activeTab === tab.id ? " active" : ""}`}
         onClick={() => switchTab(tab.id)}>
         {/* Icons per tab */}
-        {tab.id === "commissions" && (
+        {tab.id === "gallery" && (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>
+          <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
           </svg>
         )}
         {tab.id === "bottles" && (
@@ -1555,10 +1556,9 @@ export default function App() {
           <path d="M12 2v4M8 6h8l1 3v9a2 2 0 01-2 2H7a2 2 0 01-2-2V9l1-3z"/><path d="M8 11h8"/>
           </svg>
         )}
-        {tab.id === "gallery" && (
+        {tab.id === "commissions" && (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
-          <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+          <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>
           </svg>
         )}
         {tab.id === "about" && (
