@@ -911,11 +911,342 @@ function QuickAddPrompt({ product, qty, onClose, onConfirm }) {
 }
 
 // ==========================================
+// PAGE: GALLERY
+// ==========================================
+/*
+ * GALLERY CATALOG
+ * ---------------
+ * Each piece has an id, title, category, and image.
+ * Replace placeholder with real image imports once assets are provided.
+ * Categories map to the filter buttons at the top.
+ * To add a new piece: add an entry to GALLERY_ITEMS.
+ * To add a new category: add it to GALLERY_CATEGORIES.
+ */
+
+const GALLERY_CATEGORIES = ["All", "Posters", "Prints", "Album Art", "Promo"];
+
+const GALLERY_ITEMS = [
+  { id: 1, title: "Piece Title", category: "Posters", img: null },
+{ id: 2, title: "Piece Title", category: "Album Art", img: null },
+{ id: 3, title: "Piece Title", category: "Prints", img: null },
+{ id: 4, title: "Piece Title", category: "Posters", img: null },
+{ id: 5, title: "Piece Title", category: "Promo", img: null },
+{ id: 6, title: "Piece Title", category: "Prints", img: null },
+{ id: 7, title: "Piece Title", category: "Album Art", img: null },
+{ id: 8, title: "Piece Title", category: "Posters", img: null },
+{ id: 9, title: "Piece Title", category: "Promo", img: null },
+];
+
+function GalleryPage() {
+  const [activeFilter, setActiveFilter] = useState("All");
+  const [lightbox, setLightbox] = useState(null);
+
+  const filtered = activeFilter === "All"
+  ? GALLERY_ITEMS
+  : GALLERY_ITEMS.filter((p) => p.category === activeFilter);
+
+  return (
+    <>
+    <style>{`
+      /* ---- FILTER BAR ---- */
+      .gallery-filters {
+        display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 32px;
+      }
+      .filter-btn {
+        padding: 7px 18px; border-radius: 99px; font-size: 13px; font-weight: 600;
+        border: 1.5px solid var(--border); background: transparent;
+        color: var(--text-dim); cursor: pointer;
+        font-family: 'Inter', sans-serif; transition: all 0.15s ease;
+      }
+      .filter-btn:hover { border-color: var(--text-dim); color: var(--text); }
+      .filter-btn.active { background: var(--text); color: var(--bg); border-color: var(--text); }
+
+      /* ---- GALLERY GRID ---- */
+      .gallery-grid {
+        columns: 2; gap: 12px; margin-bottom: 20px;
+      }
+      @media (min-width: 560px) { .gallery-grid { columns: 3; } }
+
+      .gallery-item {
+        break-inside: avoid; margin-bottom: 12px;
+        border-radius: 12px; overflow: hidden;
+        cursor: pointer; position: relative;
+        background: var(--surface); border: 1px solid var(--border);
+        transition: transform 0.2s ease, border-color 0.2s ease;
+      }
+      .gallery-item:hover { transform: translateY(-2px); border-color: var(--text-dim); }
+
+      /* Placeholder blocks — alternate heights for masonry feel */
+      .gallery-placeholder {
+        width: 100%; background: linear-gradient(145deg, #1e1b17, #141210);
+        display: flex; align-items: center; justify-content: center;
+        color: var(--border); font-size: 28px; position: relative; overflow: hidden;
+      }
+      .gallery-placeholder::after {
+        content: ''; position: absolute; inset: 0;
+        background: linear-gradient(135deg, rgba(143,173,139,0.05) 0%, rgba(184,165,204,0.05) 100%);
+      }
+      .gallery-item:nth-child(odd) .gallery-placeholder { aspect-ratio: 3/4; }
+      .gallery-item:nth-child(even) .gallery-placeholder { aspect-ratio: 4/5; }
+      .gallery-item:nth-child(3n) .gallery-placeholder { aspect-ratio: 1/1; }
+
+      /* Hover overlay */
+      .gallery-overlay {
+        position: absolute; inset: 0; background: rgba(14,13,11,0.7);
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 4px;
+        opacity: 0; transition: opacity 0.2s ease;
+      }
+      .gallery-item:hover .gallery-overlay { opacity: 1; }
+      .gallery-overlay-title {
+        font-size: 13px; font-weight: 700; color: var(--text);
+        font-family: 'Inter', sans-serif;
+      }
+      .gallery-overlay-cat {
+        font-size: 11px; font-weight: 500; color: var(--text-dim);
+        font-family: 'Inter', sans-serif; letter-spacing: 1px; text-transform: uppercase;
+      }
+
+      /* ---- LIGHTBOX ---- */
+      .lightbox {
+        position: fixed; inset: 0; background: rgba(0,0,0,0.92);
+        backdrop-filter: blur(8px); z-index: 400;
+        display: flex; align-items: center; justify-content: center;
+        animation: overlayIn 0.2s ease;
+      }
+      .lightbox-inner {
+        position: relative; max-width: 680px; width: 90%;
+      }
+      .lightbox-img {
+        width: 100%; border-radius: 16px;
+        background: linear-gradient(145deg, #1e1b17, #141210);
+        aspect-ratio: 3/4; display: flex; align-items: center;
+        justify-content: center; font-size: 64px; color: var(--border);
+      }
+      .lightbox-info {
+        margin-top: 16px; display: flex;
+        justify-content: space-between; align-items: center;
+      }
+      .lightbox-title { font-size: 16px; font-weight: 700; }
+      .lightbox-cat { font-size: 12px; color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase; }
+      .lightbox-close {
+        position: absolute; top: -16px; right: -16px; width: 40px; height: 40px;
+        border-radius: 50%; background: var(--surface); border: 1px solid var(--border);
+        color: var(--text); font-size: 18px; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        transition: border-color 0.15s;
+      }
+      .lightbox-close:hover { border-color: var(--text-dim); }
+      `}</style>
+
+      <div className="hero">
+      <h1 className="hero-title">The<br /><span className="flow">Gallery</span></h1>
+      <p className="hero-sub">
+      A collection of original handpainted works — posters, prints, album art,
+      and everything in between. Each piece is one of a kind.
+      </p>
+      </div>
+
+      <section>
+      {/* FILTER BUTTONS */}
+      <div className="gallery-filters">
+      {GALLERY_CATEGORIES.map((cat) => (
+        <button
+        key={cat}
+        className={`filter-btn ${activeFilter === cat ? "active" : ""}`}
+        onClick={() => setActiveFilter(cat)}
+        >{cat}</button>
+      ))}
+      </div>
+
+      {/* MASONRY GRID */}
+      <div className="gallery-grid">
+      {filtered.map((item) => (
+        <div className="gallery-item" key={item.id} onClick={() => setLightbox(item)}>
+        <div className="gallery-placeholder">
+        {item.img
+          ? <img src={item.img} alt={item.title} style={{ width: "100%", display: "block" }} />
+          : "🎨"
+        }
+        <div className="gallery-overlay">
+        <div className="gallery-overlay-title">{item.title}</div>
+        <div className="gallery-overlay-cat">{item.category}</div>
+        </div>
+        </div>
+        </div>
+      ))}
+      </div>
+      </section>
+
+      <Footer />
+
+      {/* LIGHTBOX */}
+      {lightbox && (
+        <div className="lightbox" onClick={() => setLightbox(null)}>
+        <div className="lightbox-inner" onClick={(e) => e.stopPropagation()}>
+        <button className="lightbox-close" onClick={() => setLightbox(null)}>✕</button>
+        <div className="lightbox-img">
+        {lightbox.img
+          ? <img src={lightbox.img} alt={lightbox.title} style={{ width: "100%", borderRadius: 16 }} />
+          : "🎨"
+        }
+        </div>
+        <div className="lightbox-info">
+        <div>
+        <div className="lightbox-title">{lightbox.title}</div>
+        <div className="lightbox-cat">{lightbox.category}</div>
+        </div>
+        </div>
+        </div>
+        </div>
+      )}
+      </>
+  );
+}
+
+
+// ==========================================
+// PAGE: ABOUT
+// ==========================================
+/*
+ * ABOUT PAGE
+ * ----------
+ * Replace placeholder text and images with real content.
+ * The ABOUT_STATS array drives the little stat row — update the values.
+ * Portrait photo: import and replace the placeholder div in the hero area.
+ */
+
+const ABOUT_STATS = [
+  { value: "100+", label: "Pieces Created" },
+{ value: "5+", label: "Years Painting" },
+{ value: "∞", label: "Vibes Given" },
+];
+
+function AboutPage() {
+  return (
+    <>
+    <style>{`
+      /* ---- ABOUT PORTRAIT ---- */
+      .about-portrait {
+        width: 100%; aspect-ratio: 3/4; max-width: 280px;
+        border-radius: 20px; overflow: hidden; margin-bottom: 40px;
+        background: linear-gradient(145deg, #1e1b17, #141210);
+        border: 1px solid var(--border);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 48px; color: var(--border); position: relative;
+      }
+      .about-portrait::after {
+        content: ''; position: absolute; inset: 0;
+        background: linear-gradient(135deg, rgba(143,173,139,0.06) 0%, rgba(184,165,204,0.08) 100%);
+      }
+      .about-portrait img {
+        width: 100%; height: 100%; object-fit: cover;
+      }
+
+      /* ---- STATS ROW ---- */
+      .about-stats {
+        display: flex; gap: 0; margin-bottom: 48px;
+        border: 1px solid var(--border); border-radius: 16px; overflow: hidden;
+      }
+      .about-stat {
+        flex: 1; padding: 20px 16px; text-align: center;
+        border-right: 1px solid var(--border);
+      }
+      .about-stat:last-child { border-right: none; }
+      .about-stat-value {
+        font-size: 28px; font-weight: 800; margin-bottom: 4px;
+        background: linear-gradient(135deg, var(--lavender), var(--sage));
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      }
+      .about-stat-label {
+        font-size: 11px; font-weight: 600; color: var(--text-dim);
+        letter-spacing: 1.5px; text-transform: uppercase;
+      }
+
+      /* ---- PHOTO GRID (additional shots) ---- */
+      .about-photo-grid {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px;
+      }
+      .about-photo {
+        aspect-ratio: 1/1; border-radius: 12px; overflow: hidden;
+        background: linear-gradient(145deg, #1e1b17, #141210);
+        border: 1px solid var(--border);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 28px; color: var(--border);
+      }
+      .about-photo img { width: 100%; height: 100%; object-fit: cover; }
+      `}</style>
+
+      <div className="hero">
+      <h1 className="hero-title">The<br /><span className="flow">Artist</span></h1>
+      <p className="hero-sub">
+      Handpainted mixed media from someone who lives and breathes the music.
+      </p>
+      </div>
+
+      {/* PORTRAIT — replace the div contents with <img src={portrait} /> when ready */}
+      <div className="about-portrait">🎨</div>
+
+      {/* STATS */}
+      <div className="about-stats">
+      {ABOUT_STATS.map((s) => (
+        <div className="about-stat" key={s.label}>
+        <div className="about-stat-value">{s.value}</div>
+        <div className="about-stat-label">{s.label}</div>
+        </div>
+      ))}
+      </div>
+
+      {/* BIO */}
+      <section>
+      <div className="section-label" style={{ color: "var(--lavender)" }}>~ the story</div>
+      <div className="card">
+      <p>
+      {/* Replace this with the real bio */}
+      This is where the artist's story goes. Talk about how you got started,
+      what drives the work, the connection to music and culture. Keep it personal —
+      people commission art from <strong>people</strong>, not studios.
+      </p>
+      </div>
+      </section>
+
+      {/* APPROACH */}
+      <section>
+      <div className="section-label" style={{ color: "var(--sage)" }}>~ the approach</div>
+      <div className="card">
+      <p>
+      {/* Replace this with a description of the artistic process/style */}
+      Talk about your medium, your process, what makes your style distinct.
+      The psychedelic mixed media aesthetic, the faded washes, the tie-dye warmth —
+      what does it mean to you and where does it come from?
+      </p>
+      </div>
+      </section>
+
+      {/* ADDITIONAL PHOTOS — replace placeholders with real lifestyle/studio shots */}
+      <section>
+      <div className="section-label" style={{ color: "var(--dusty-rose)" }}>~ in the studio</div>
+      <div className="about-photo-grid">
+      {[1, 2, 3, 4].map((i) => (
+        <div className="about-photo" key={i}>📸</div>
+      ))}
+      </div>
+      </section>
+
+      <Footer />
+      </>
+  );
+}
+
+
+// ==========================================
 // TABS
 // ==========================================
 const TABS = [
   { id: "commissions", label: "Commissions", component: CommissionsPage },
 { id: "bottles", label: "Water Bottles", component: WaterBottlePage },
+{ id: "gallery", label: "Gallery", component: GalleryPage },
+{ id: "about", label: "About", component: AboutPage },
 ];
 
 // ==========================================
