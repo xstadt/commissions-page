@@ -1124,11 +1124,17 @@ function GalleryPage() {
       .lightbox-close:hover { border-color: var(--text-dim); }
       `}</style>
 
-      <div className="hero">
-      <h1 className="hero-title">The<br /><span className="flow">Gallery</span></h1>
-      <p className="hero-sub">
-      A collection of original handpainted works — posters, prints, album art,
-      and everything in between. Each piece is one of a kind.
+      <div style={{ textAlign: "center", marginBottom: 48 }}>
+      <img
+      src={logo}
+      alt="Visual Frequencies Studios"
+      style={{ width: "min(280px, 70%)", height: "auto", marginBottom: 20 }}
+      />
+      <h1 className="hero-title" style={{ marginBottom: 12 }}>
+      Visual Frequencies<br /><span className="flow">Studios</span>
+      </h1>
+      <p className="hero-sub" style={{ margin: "0 auto" }}>
+      Original handpainted mixed media art — one of a kind, every time.
       </p>
       </div>
 
