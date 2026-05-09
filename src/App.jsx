@@ -1149,18 +1149,18 @@ function AboutPage() {
         border: 1px solid var(--border); border-radius: 16px; overflow: hidden;
       }
       .about-stat {
-        flex: 1; padding: 20px 16px; text-align: center;
+        flex: 1; padding: 20px 12px; text-align: center;
         border-right: 1px solid var(--border);
       }
       .about-stat:last-child { border-right: none; }
       .about-stat-value {
-        font-size: 28px; font-weight: 800; margin-bottom: 4px;
+        font-size: clamp(20px, 5vw, 28px); font-weight: 800; margin-bottom: 4px;
         background: linear-gradient(135deg, var(--lavender), var(--sage));
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
       }
       .about-stat-label {
-        font-size: 11px; font-weight: 600; color: var(--text-dim);
-        letter-spacing: 1.5px; text-transform: uppercase;
+        font-size: clamp(9px, 2vw, 11px); font-weight: 600; color: var(--text-dim);
+        letter-spacing: 1px; text-transform: uppercase;
       }
 
       /* ---- PHOTO GRID (additional shots) ---- */
@@ -1285,65 +1285,96 @@ export default function App() {
         max-width: 720px; margin: 0 auto;
       }
       /* ============================================
-       *          STICKY TOP NAVBAR
-       *          Fixed to the top, blurs in on scroll.
-       *          Logo left, nav links right.
-       *          Active state: small dot + full opacity text.
+       *          NAVIGATION
+       *          Desktop: sticky top bar, logo left, links right
+       *          Mobile: logo-only top bar + fixed bottom tab bar
        *          ============================================ */
+
+      /* ---- TOP BAR (both breakpoints) ---- */
       .topnav {
         position: fixed; top: 0; left: 0; right: 0; z-index: 150;
-        background: transparent;
-        border-bottom: 1px solid transparent;
-        transition: background 0.3s ease, border-color 0.3s ease, backdrop-filter 0.3s ease;
+        background: transparent; border-bottom: 1px solid transparent;
+        transition: background 0.3s ease, border-color 0.3s ease;
       }
       .topnav.scrolled {
-        background: rgba(14, 13, 11, 0.82);
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
+        background: rgba(14,13,11,0.85);
+        backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
         border-bottom-color: var(--border);
       }
       .topnav-inner {
-        max-width: 720px; margin: 0 auto;
-        padding: 0 20px;
-        height: 60px;
-        display: flex; align-items: center; justify-content: space-between;
+        max-width: 720px; margin: 0 auto; padding: 0 20px;
+        height: 60px; display: flex; align-items: center; justify-content: space-between;
       }
-      /* Logo area — left side */
-      .topnav-logo {
-        font-size: 13px; font-weight: 700; letter-spacing: 0.5px;
-        color: var(--text-dim); cursor: default; flex-shrink: 0;
-      }
-      .topnav-logo img {
-        height: 28px; width: auto; display: block;
-      }
-      /* Nav links — right side */
+      .topnav-logo { flex-shrink: 0; }
+      .topnav-logo img { height: 28px; width: auto; display: block; }
+
+      /* Desktop nav links (hidden on mobile) */
       .topnav-links {
         display: flex; align-items: center; gap: 2px;
       }
       .nav-link {
-        position: relative;
-        padding: 8px 16px;
-        background: none; border: none;
-        font-family: 'Inter', sans-serif;
-        font-size: 14px; font-weight: 500;
-        color: var(--text-dim);
-        cursor: pointer;
-        transition: color 0.2s ease;
-        white-space: nowrap;
+        position: relative; padding: 8px 16px;
+        background: none; border: none; font-family: 'Inter', sans-serif;
+        font-size: 14px; font-weight: 500; color: var(--text-dim);
+        cursor: pointer; transition: color 0.2s ease; white-space: nowrap;
       }
       .nav-link:hover { color: var(--text); }
       .nav-link.active { color: var(--text); font-weight: 600; }
-      /* Active underline indicator */
       .nav-link::after {
-        content: '';
-  position: absolute; bottom: 2px; left: 50%; right: 50%;
-  height: 1.5px; border-radius: 99px;
-  background: var(--text);
-  transition: left 0.25s ease, right 0.25s ease;
+        content: ''; position: absolute; bottom: 2px; left: 50%; right: 50%;
+        height: 1.5px; border-radius: 99px; background: var(--text);
+        transition: left 0.25s ease, right 0.25s ease;
       }
       .nav-link.active::after { left: 16px; right: 16px; }
-      /* Page content offset for the fixed nav */
-      .page { padding-top: 80px; }
+
+      /* ---- BOTTOM TAB BAR (mobile only) ---- */
+      .bottomnav {
+        display: none;
+        position: fixed; bottom: 0; left: 0; right: 0; z-index: 150;
+        background: rgba(14,13,11,0.92);
+        backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+        border-top: 1px solid var(--border);
+        padding-bottom: env(safe-area-inset-bottom);
+      }
+      .bottomnav-inner {
+        display: flex; max-width: 720px; margin: 0 auto;
+      }
+      .bottomnav-btn {
+        flex: 1; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 5px;
+        padding: 10px 4px 10px; min-height: 60px;
+        background: none; border: none; cursor: pointer;
+        color: var(--text-dim); font-family: 'Inter', sans-serif;
+        font-size: 10px; font-weight: 600; letter-spacing: 0.3px;
+        transition: color 0.15s ease; -webkit-tap-highlight-color: transparent;
+      }
+      .bottomnav-btn.active { color: var(--text); }
+      .bottomnav-btn svg { width: 22px; height: 22px; transition: transform 0.15s ease; }
+      .bottomnav-btn.active svg { transform: translateY(-1px); }
+
+      /* Active indicator dot above icon */
+      .bottomnav-btn::before {
+        content: ''; display: block; width: 4px; height: 4px;
+        border-radius: 50%; background: var(--text);
+        position: absolute; top: 6px;
+        opacity: 0; transition: opacity 0.15s ease;
+      }
+      .bottomnav-btn { position: relative; }
+      .bottomnav-btn.active::before { opacity: 1; }
+
+      /* ---- RESPONSIVE BREAKPOINTS ---- */
+      @media (max-width: 640px) {
+        .topnav-links { display: none; }
+        .bottomnav { display: block; }
+        /* Extra bottom padding so content clears the bottom bar */
+        .page { padding-bottom: 80px; }
+      }
+      @media (min-width: 641px) {
+        .page { padding-top: 80px; }
+      }
+      @media (max-width: 640px) {
+        .page { padding-top: 72px; }
+      }
       .status {
         display: inline-flex; align-items: center; gap: 8px; padding: 6px 16px;
         border-radius: 99px; font-size: 12px; font-weight: 600;
@@ -1412,17 +1443,47 @@ export default function App() {
       <div className="topnav-logo">
       <img src={logo} alt="Visual Frequencies Studios" />
       </div>
+      {/* Desktop only — hidden on mobile via CSS */}
       <div className="topnav-links">
       {TABS.map((tab) => (
-        <button
-        key={tab.id}
-        className={`nav-link${activeTab === tab.id ? " active" : ""}`}
-        onClick={() => switchTab(tab.id)}
-        >
+        <button key={tab.id} className={`nav-link${activeTab === tab.id ? " active" : ""}`}
+        onClick={() => switchTab(tab.id)}>{tab.label}</button>
+      ))}
+      </div>
+      </div>
+      </nav>
+
+      {/* BOTTOM TAB BAR — mobile only, shown via CSS */}
+      <nav className="bottomnav">
+      <div className="bottomnav-inner">
+      {TABS.map((tab) => (
+        <button key={tab.id} className={`bottomnav-btn${activeTab === tab.id ? " active" : ""}`}
+        onClick={() => switchTab(tab.id)}>
+        {/* Icons per tab */}
+        {tab.id === "commissions" && (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>
+          </svg>
+        )}
+        {tab.id === "bottles" && (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 2v4M8 6h8l1 3v9a2 2 0 01-2 2H7a2 2 0 01-2-2V9l1-3z"/><path d="M8 11h8"/>
+          </svg>
+        )}
+        {tab.id === "gallery" && (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+          </svg>
+        )}
+        {tab.id === "about" && (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+          </svg>
+        )}
         {tab.label}
         </button>
       ))}
-      </div>
       </div>
       </nav>
 
