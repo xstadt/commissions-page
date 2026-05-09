@@ -18,6 +18,10 @@ import logo from "./logo.png";
 
 const COMMISSION_STATUS = "open";
 
+// Formspree endpoint — handles both commissions and bottle orders.
+// A hidden form_type field tells them apart in your inbox.
+const FORMSPREE_ENDPOINT = "https://formspree.io/f/mgodnbvr";
+
 // ==========================================
 // PRODUCT CATALOG
 // ==========================================
@@ -105,19 +109,50 @@ function Footer() {
 function CommissionsPage() {
   const [form, setForm] = useState({ name: "", email: "", description: "", size: "", timeline: "" });
   const [sent, setSent] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState(null);
   const [errors, setErrors] = useState({});
+
   const update = (field) => (e) => {
     setForm({ ...form, [field]: e.target.value });
     if (errors[field]) setErrors({ ...errors, [field]: null });
   };
-  const handleSubmit = () => {
+
+  const handleSubmit = async () => {
+    // Client-side validation first
     const errs = {};
     if (!form.name.trim()) errs.name = "Required";
     if (!form.email.trim()) errs.email = "Required";
     else if (!validateEmail(form.email)) errs.email = "Invalid email";
     if (!form.description.trim()) errs.description = "Tell us about your idea";
     if (Object.keys(errs).length > 0) { setErrors(errs); return; }
-    setSent(true);
+
+    setSubmitting(true);
+    setSubmitError(null);
+
+    try {
+      const res = await fetch(FORMSPREE_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({
+          form_type: "Commission Request",
+            name: form.name,
+            email: form.email,
+            size_or_format: form.size || "Not specified",
+            timeline: form.timeline || "Flexible",
+            description: form.description,
+        }),
+      });
+      if (res.ok) {
+        setSent(true);
+      } else {
+        setSubmitError("Something went wrong. Please try again or email us directly.");
+      }
+    } catch {
+      setSubmitError("Network error — check your connection and try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -190,7 +225,15 @@ function CommissionsPage() {
       <label>Describe Your Idea {errors.description && <span className="field-error">{errors.description}</span>}</label>
       <textarea className={errors.description ? "input-error" : ""} placeholder="Subject, colors, mood, intended use — the more detail the better." value={form.description} onChange={update("description")} />
       </div>
-      <button className="submit-btn" onClick={handleSubmit}>Submit Request</button>
+      {submitError && (
+        <div style={{ color: "var(--dusty-rose)", fontSize: 13, marginBottom: 12, fontWeight: 500 }}>
+        {submitError}
+        </div>
+      )}
+      <button className="submit-btn" onClick={handleSubmit} disabled={submitting}
+      style={{ opacity: submitting ? 0.6 : 1, cursor: submitting ? "not-allowed" : "pointer" }}>
+      {submitting ? "Sending..." : "Submit Request"}
+      </button>
       </div>
     )}
     </section>
@@ -212,6 +255,8 @@ function WaterBottlePage() {
   const [orderSent, setOrderSent] = useState(false);
   const [checkoutForm, setCheckoutForm] = useState({ name: "", email: "", notes: "" });
   const [checkoutErrors, setCheckoutErrors] = useState({});
+  const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
+  const [checkoutSubmitError, setCheckoutSubmitError] = useState(null);
   const [toast, setToast] = useState(null);
   const [quickCounts, setQuickCounts] = useState({});
   const [pendingQuickAdd, setPendingQuickAdd] = useState(null);
@@ -281,13 +326,44 @@ function WaterBottlePage() {
     setCartOpen(true);
   };
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     const errs = {};
     if (!checkoutForm.name.trim()) errs.name = "Required";
     if (!checkoutForm.email.trim()) errs.email = "Required";
     else if (!validateEmail(checkoutForm.email)) errs.email = "Invalid email";
     if (Object.keys(errs).length > 0) { setCheckoutErrors(errs); return; }
-    setOrderSent(true);
+
+    setCheckoutSubmitting(true);
+    setCheckoutSubmitError(null);
+
+    // Serialize cart into a readable string for the email
+    const cartSummary = cart.map((item) =>
+    `• ${item.name} (${item.size}) × ${item.qty} — ${item.selectedColor}${item.customNote ? ` — "${item.customNote}"` : ""} — $${item.price * item.qty}`
+    ).join("\n");
+
+    try {
+      const res = await fetch(FORMSPREE_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({
+          form_type: "Bottle Order Request",
+            name: checkoutForm.name,
+            email: checkoutForm.email,
+            order_total: `$${cartTotal}`,
+            order_summary: cartSummary,
+            notes: checkoutForm.notes || "None",
+        }),
+      });
+      if (res.ok) {
+        setOrderSent(true);
+      } else {
+        setCheckoutSubmitError("Something went wrong. Please try again.");
+      }
+    } catch {
+      setCheckoutSubmitError("Network error — check your connection and try again.");
+    } finally {
+      setCheckoutSubmitting(false);
+    }
   };
 
   // Close mobile active card when tapping outside
@@ -811,7 +887,16 @@ function WaterBottlePage() {
             <input placeholder="Optional — shipping notes, questions, etc." value={checkoutForm.notes}
             onChange={(e) => setCheckoutForm({ ...checkoutForm, notes: e.target.value })} />
             </div>
-            <button className="checkout-btn" onClick={handleCheckout}>Submit Order Request</button>
+            {checkoutSubmitError && (
+              <div style={{ color: "var(--dusty-rose)", fontSize: 13, marginBottom: 12, fontWeight: 500 }}>
+              {checkoutSubmitError}
+              </div>
+            )}
+            <button className="checkout-btn" onClick={handleCheckout}
+            disabled={checkoutSubmitting}
+            style={{ opacity: checkoutSubmitting ? 0.6 : 1, cursor: checkoutSubmitting ? "not-allowed" : "pointer" }}>
+            {checkoutSubmitting ? "Sending..." : "Submit Order Request"}
+            </button>
             </div>
             </div>
           )}
