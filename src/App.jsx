@@ -478,12 +478,13 @@ function WaterBottlePage() {
       /* ---- CART FAB ---- */
       .cart-fab {
         position: fixed; bottom: 24px; right: 24px; width: 56px; height: 56px;
-        border-radius: 16px; background: linear-gradient(135deg, var(--sage), var(--soft-teal));
-        border: none; cursor: pointer; display: flex; align-items: center; justify-content: center;
-        font-size: 22px; color: var(--bg); box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+        border-radius: 16px; background: #0e0d0b;
+        border: 1px solid rgba(255,255,255,0.1); cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 22px; color: var(--text); box-shadow: 0 4px 24px rgba(0,0,0,0.6);
         z-index: 100; transition: transform 0.2s, filter 0.2s;
       }
-      .cart-fab:hover { transform: scale(1.06); filter: brightness(1.08); }
+      .cart-fab:hover { transform: scale(1.06); filter: brightness(1.3); }
       .cart-badge {
         position: absolute; top: -4px; right: -4px; min-width: 22px; height: 22px;
         border-radius: 99px; padding: 0 5px; background: var(--dusty-rose); color: white;
