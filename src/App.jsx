@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import logo from "./logo.png";
+import artistPortrait from "./artist-portrait.JPG";
+import family1 from "./family1.jpg";
+import familybw from "./familybw.jpg";
+import studio1 from "./studio1.jpg";
 
 /*
  * ========================================
@@ -119,7 +123,6 @@ function CommissionsPage() {
   };
 
   const handleSubmit = async () => {
-    // Client-side validation first
     const errs = {};
     if (!form.name.trim()) errs.name = "Required";
     if (!form.email.trim()) errs.email = "Required";
@@ -260,7 +263,6 @@ function WaterBottlePage() {
   const [toast, setToast] = useState(null);
   const [quickCounts, setQuickCounts] = useState({});
   const [pendingQuickAdd, setPendingQuickAdd] = useState(null);
-  // Track which cards are "active" on mobile (tapped to show controls)
   const [mobileActiveCard, setMobileActiveCard] = useState(null);
 
   const showToast = useCallback((msg) => {
@@ -291,12 +293,10 @@ function WaterBottlePage() {
   const cartCount = cart.reduce((sum, i) => sum + i.qty, 0);
   const cartTotal = cart.reduce((sum, i) => sum + i.price * i.qty, 0);
 
-  // Get cart summary for a specific product (for "in cart" indicator)
   const getCartSummary = (productId) => {
     const items = cart.filter((i) => i.id === productId);
     if (items.length === 0) return null;
     const totalQty = items.reduce((sum, i) => sum + i.qty, 0);
-    // Group by color for the tooltip-style breakdown
     const byColor = {};
     items.forEach((i) => {
       byColor[i.selectedColor] = (byColor[i.selectedColor] || 0) + i.qty;
@@ -336,7 +336,6 @@ function WaterBottlePage() {
     setCheckoutSubmitting(true);
     setCheckoutSubmitError(null);
 
-    // Serialize cart into a readable string for the email
     const cartSummary = cart.map((item) =>
     `• ${item.name} (${item.size}) × ${item.qty} — ${item.selectedColor}${item.customNote ? ` — "${item.customNote}"` : ""} — $${item.price * item.qty}`
     ).join("\n");
@@ -366,7 +365,6 @@ function WaterBottlePage() {
     }
   };
 
-  // Close mobile active card when tapping outside
   const handlePageClick = () => { if (mobileActiveCard) setMobileActiveCard(null); };
 
   return (
@@ -375,7 +373,6 @@ function WaterBottlePage() {
       .shop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
       @media (max-width: 480px) { .shop-grid { grid-template-columns: 1fr; } }
 
-      /* ---- PRODUCT CARD ---- */
       .product-card {
         background: var(--surface); border: 1px solid var(--border);
         border-radius: 16px; overflow: hidden; cursor: pointer;
@@ -402,7 +399,6 @@ function WaterBottlePage() {
       .product-size { font-size: 13px; color: var(--text-dim); }
       .product-price { font-size: 15px; font-weight: 700; color: var(--sage); }
 
-      /* ---- IN-CART INDICATOR ---- */
       .in-cart-badge {
         position: absolute; top: 12px; left: 12px; z-index: 6;
         display: flex; flex-direction: column; gap: 4px;
@@ -420,19 +416,13 @@ function WaterBottlePage() {
         background: var(--sage); flex-shrink: 0;
       }
 
-      /* ---- QUICK-ADD CONTROLS ----
-       *          Desktop: shown on hover, bottom-right of image
-       *          Mobile: persistent + button, expands on tap
-       */
       .qa-wrap {
         position: absolute; bottom: 12px; right: 12px; z-index: 5;
         display: flex; align-items: center; gap: 6px;
         opacity: 0; transition: opacity 0.2s ease;
         pointer-events: none;
       }
-      /* Desktop hover */
       .product-card:hover .qa-wrap { opacity: 1; pointer-events: auto; }
-      /* Mobile: always show the + button */
       .qa-wrap.mobile-visible { opacity: 1; pointer-events: auto; }
 
       .qa-btn {
@@ -459,7 +449,6 @@ function WaterBottlePage() {
       }
       .qa-cart-btn:hover { filter: brightness(1.1); }
 
-      /* Mobile: persistent add button */
       .mobile-add-btn {
         display: none; position: absolute; bottom: 12px; right: 12px; z-index: 5;
         width: 38px; height: 38px; border-radius: 10px;
@@ -475,7 +464,6 @@ function WaterBottlePage() {
         .qa-wrap.mobile-visible { opacity: 1; pointer-events: auto; }
       }
 
-      /* ---- CART FAB ---- */
       .cart-fab {
         position: fixed; bottom: 24px; right: 24px; width: 56px; height: 56px;
         border-radius: 16px; background: #0e0d0b;
@@ -492,7 +480,6 @@ function WaterBottlePage() {
         justify-content: center; font-family: 'Inter', sans-serif;
       }
 
-      /* ---- OVERLAY ---- */
       .overlay {
         position: fixed; inset: 0; background: rgba(0,0,0,0.7);
         backdrop-filter: blur(4px); z-index: 200;
@@ -501,7 +488,6 @@ function WaterBottlePage() {
       }
       @keyframes overlayIn { from { opacity: 0; } to { opacity: 1; } }
 
-      /* ---- PRODUCT MODAL ---- */
       .product-modal {
         background: var(--surface); border: 1px solid var(--border);
         border-radius: 20px; width: 90%; max-width: 480px;
@@ -552,7 +538,6 @@ function WaterBottlePage() {
       .modal-note-input:focus { border-color: var(--sage); }
       .modal-note-input::placeholder { color: #5a5047; }
 
-      /* ---- QUANTITY CONTROL ---- */
       .qty-control {
         display: flex; align-items: center; gap: 2px;
         background: var(--bg); border: 1.5px solid var(--border);
@@ -570,7 +555,6 @@ function WaterBottlePage() {
         font-weight: 700; color: var(--text); font-family: 'Inter', sans-serif;
       }
 
-      /* ---- ACTION BUTTONS (shared hover effect) ---- */
       .add-to-cart-btn, .submit-btn, .checkout-btn {
         transition: filter 0.2s ease, transform 0.15s ease;
       }
@@ -593,7 +577,6 @@ function WaterBottlePage() {
           }
           .add-to-cart-btn:disabled { opacity: 0.4; cursor: not-allowed; filter: none; transform: none; }
 
-          /* ---- CART DRAWER ---- */
           .cart-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 250; }
           .cart-drawer {
             position: fixed; top: 0; right: 0; width: 380px; max-width: 92vw;
@@ -656,7 +639,6 @@ function WaterBottlePage() {
           }
           .keep-shopping-btn:hover { border-color: var(--text-dim); color: var(--text); }
 
-          /* ---- CHECKOUT MODAL ---- */
           .checkout-modal {
             background: var(--surface); border: 1px solid var(--border);
             border-radius: 20px; width: 90%; max-width: 440px;
@@ -677,7 +659,6 @@ function WaterBottlePage() {
             max-width: 440px; width: 90%; animation: modalSlideUp 0.3s ease;
           }
 
-          /* ---- QUICK-ADD PROMPT ---- */
           .quick-prompt {
             background: var(--surface); border: 1px solid var(--border);
             border-radius: 20px; width: 90%; max-width: 420px;
@@ -692,7 +673,6 @@ function WaterBottlePage() {
           }
           `}</style>
 
-          {/* HERO */}
           <div className="hero">
           <h1 className="hero-title">Custom<br /><span className="flow">Water Bottles</span></h1>
           <p className="hero-sub">
@@ -701,7 +681,6 @@ function WaterBottlePage() {
           </p>
           </div>
 
-          {/* PRODUCT GRID */}
           <section>
           <div className="section-label" style={{ color: "var(--soft-teal)" }}>~ choose your bottle</div>
           <div className="shop-grid">
@@ -715,7 +694,6 @@ function WaterBottlePage() {
               <div className="product-img-wrap" onClick={() => setSelectedProduct(product)}>
               <div className="product-img-emoji">🫗</div>
 
-              {/* IN-CART INDICATOR: shows breakdown by color */}
               {summary && (
                 <div className="in-cart-badge">
                 {Object.entries(summary.byColor).map(([color, qty]) => (
@@ -727,7 +705,6 @@ function WaterBottlePage() {
                 </div>
               )}
 
-              {/* MOBILE: persistent + button (hidden on desktop via CSS) */}
               <button
               className="mobile-add-btn"
               onClick={(e) => {
@@ -741,7 +718,6 @@ function WaterBottlePage() {
               }}
               >+</button>
 
-              {/* QUICK-ADD CONTROLS: bottom-right, squircle buttons */}
               <div className={`qa-wrap ${isMobileActive ? "mobile-visible" : ""}`}>
               {qc > 0 && (
                 <button className="qa-btn" onClick={(e) => { e.stopPropagation(); quickDecrement(product.id); }}>−</button>
@@ -769,7 +745,6 @@ function WaterBottlePage() {
           </div>
           </section>
 
-          {/* HOW IT WORKS */}
           <section>
           <div className="section-label" style={{ color: "var(--warm-gold)" }}>~ how it works</div>
           <div className="card">
@@ -783,17 +758,14 @@ function WaterBottlePage() {
 
           <Footer />
 
-          {/* CART FAB */}
           {cartCount > 0 && (
             <button className="cart-fab" onClick={() => setCartOpen(true)}>
             🛒<span className="cart-badge">{cartCount}</span>
             </button>
           )}
 
-          {/* TOAST */}
           {toast && <Toast message={toast} onDone={() => setToast(null)} />}
 
-          {/* PRODUCT DETAIL MODAL */}
           {selectedProduct && (
             <ProductModal
             product={selectedProduct}
@@ -802,7 +774,6 @@ function WaterBottlePage() {
             />
           )}
 
-          {/* QUICK-ADD PROMPT */}
           {pendingQuickAdd && (
             <QuickAddPrompt
             product={pendingQuickAdd.product}
@@ -812,7 +783,6 @@ function WaterBottlePage() {
             />
           )}
 
-          {/* CART DRAWER */}
           {cartOpen && (
             <>
             <div className="cart-overlay" onClick={() => setCartOpen(false)} />
@@ -858,7 +828,6 @@ function WaterBottlePage() {
             </>
           )}
 
-          {/* CHECKOUT */}
           {checkingOut && !orderSent && (
             <div className="overlay" onClick={() => setCheckingOut(false)}>
             <div className="checkout-modal" onClick={(e) => e.stopPropagation()}>
@@ -902,7 +871,6 @@ function WaterBottlePage() {
             </div>
           )}
 
-          {/* ORDER SUCCESS */}
           {orderSent && (
             <div className="overlay">
             <div className="order-success">
@@ -919,7 +887,7 @@ function WaterBottlePage() {
 }
 
 // ==========================================
-// PRODUCT MODAL — with quantity selector
+// PRODUCT MODAL
 // ==========================================
 function ProductModal({ product, onClose, onAdd }) {
   const [selectedColor, setSelectedColor] = useState("");
@@ -999,15 +967,6 @@ function QuickAddPrompt({ product, qty, onClose, onConfirm }) {
 // ==========================================
 // PAGE: GALLERY
 // ==========================================
-/*
- * GALLERY CATALOG
- * ---------------
- * Each piece has an id, title, category, and image.
- * Replace placeholder with real image imports once assets are provided.
- * Categories map to the filter buttons at the top.
- * To add a new piece: add an entry to GALLERY_ITEMS.
- * To add a new category: add it to GALLERY_CATEGORIES.
- */
 
 const GALLERY_CATEGORIES = ["All", "Posters", "Prints", "Album Art", "Promo"];
 
@@ -1034,7 +993,6 @@ function GalleryPage() {
   return (
     <>
     <style>{`
-      /* ---- FILTER BAR ---- */
       .gallery-filters {
         display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 32px;
       }
@@ -1047,7 +1005,6 @@ function GalleryPage() {
       .filter-btn:hover { border-color: var(--text-dim); color: var(--text); }
       .filter-btn.active { background: var(--text); color: var(--bg); border-color: var(--text); }
 
-      /* ---- GALLERY GRID ---- */
       .gallery-grid {
         columns: 2; gap: 12px; margin-bottom: 20px;
       }
@@ -1062,7 +1019,6 @@ function GalleryPage() {
       }
       .gallery-item:hover { transform: translateY(-2px); border-color: var(--text-dim); }
 
-      /* Placeholder blocks — alternate heights for masonry feel */
       .gallery-placeholder {
         width: 100%; background: linear-gradient(145deg, #1e1b17, #141210);
         display: flex; align-items: center; justify-content: center;
@@ -1076,7 +1032,6 @@ function GalleryPage() {
       .gallery-item:nth-child(even) .gallery-placeholder { aspect-ratio: 4/5; }
       .gallery-item:nth-child(3n) .gallery-placeholder { aspect-ratio: 1/1; }
 
-      /* Hover overlay */
       .gallery-overlay {
         position: absolute; inset: 0; background: rgba(14,13,11,0.7);
         display: flex; flex-direction: column;
@@ -1093,7 +1048,6 @@ function GalleryPage() {
         font-family: 'Inter', sans-serif; letter-spacing: 1px; text-transform: uppercase;
       }
 
-      /* ---- LIGHTBOX ---- */
       .lightbox {
         position: fixed; inset: 0; background: rgba(0,0,0,0.92);
         backdrop-filter: blur(8px); z-index: 400;
@@ -1140,7 +1094,6 @@ function GalleryPage() {
       </div>
 
       <section>
-      {/* FILTER BUTTONS */}
       <div className="gallery-filters">
       {GALLERY_CATEGORIES.map((cat) => (
         <button
@@ -1151,7 +1104,6 @@ function GalleryPage() {
       ))}
       </div>
 
-      {/* MASONRY GRID */}
       <div className="gallery-grid">
       {filtered.map((item) => (
         <div className="gallery-item" key={item.id} onClick={() => setLightbox(item)}>
@@ -1172,7 +1124,6 @@ function GalleryPage() {
 
       <Footer />
 
-      {/* LIGHTBOX */}
       {lightbox && (
         <div className="lightbox" onClick={() => setLightbox(null)}>
         <div className="lightbox-inner" onClick={(e) => e.stopPropagation()}>
@@ -1200,13 +1151,6 @@ function GalleryPage() {
 // ==========================================
 // PAGE: ABOUT
 // ==========================================
-/*
- * ABOUT PAGE
- * ----------
- * Replace placeholder text and images with real content.
- * The ABOUT_STATS array drives the little stat row — update the values.
- * Portrait photo: import and replace the placeholder div in the hero area.
- */
 
 const ABOUT_STATS = [
   { value: "100+", label: "Pieces Created" },
@@ -1218,22 +1162,24 @@ function AboutPage() {
   return (
     <>
     <style>{`
-      /* ---- ABOUT PORTRAIT ---- */
-      .about-portrait {
-        width: 100%; aspect-ratio: 3/4; max-width: 280px;
-        border-radius: 20px; overflow: hidden; margin-bottom: 40px;
-        background: linear-gradient(145deg, #1e1b17, #141210);
+      /* ---- ABOUT HERO (portrait + intro side by side) ---- */
+      .about-hero {
+        display: flex; gap: 24px; align-items: flex-start;
+        margin-bottom: 48px; flex-wrap: wrap;
+      }
+      .about-portrait-wrap {
+        flex: 0 0 200px; min-width: 140px;
+        border-radius: 20px; overflow: hidden;
         border: 1px solid var(--border);
-        display: flex; align-items: center; justify-content: center;
-        font-size: 48px; color: var(--border); position: relative;
+        aspect-ratio: 3/4;
       }
-      .about-portrait::after {
-        content: ''; position: absolute; inset: 0;
-        background: linear-gradient(135deg, rgba(143,173,139,0.06) 0%, rgba(184,165,204,0.08) 100%);
+      .about-portrait-wrap img {
+        width: 100%; height: 100%; object-fit: cover; display: block;
       }
-      .about-portrait img {
-        width: 100%; height: 100%; object-fit: cover;
+      .about-hero-text {
+        flex: 1; min-width: 200px; padding-top: 4px;
       }
+      .about-hero-text h1 { margin-bottom: 16px; }
 
       /* ---- STATS ROW ---- */
       .about-stats {
@@ -1255,29 +1201,43 @@ function AboutPage() {
         letter-spacing: 1px; text-transform: uppercase;
       }
 
-      /* ---- PHOTO GRID (additional shots) ---- */
-      .about-photo-grid {
-        display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px;
+      /* ---- PHOTO STRIP ---- */
+      .about-photo-strip {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 10px;
+        margin-top: 20px;
       }
       .about-photo {
-        aspect-ratio: 1/1; border-radius: 12px; overflow: hidden;
-        background: linear-gradient(145deg, #1e1b17, #141210);
+        aspect-ratio: 1/1; border-radius: 14px; overflow: hidden;
         border: 1px solid var(--border);
-        display: flex; align-items: center; justify-content: center;
-        font-size: 28px; color: var(--border);
+        background: linear-gradient(145deg, #1e1b17, #141210);
       }
-      .about-photo img { width: 100%; height: 100%; object-fit: cover; }
+      .about-photo img {
+        width: 100%; height: 100%; object-fit: cover; display: block;
+        transition: transform 0.4s ease;
+      }
+      .about-photo:hover img { transform: scale(1.04); }
+
+      @media (max-width: 480px) {
+        .about-portrait-wrap { flex: 0 0 130px; }
+        .about-photo-strip { grid-template-columns: 1fr 1fr; }
+        .about-photo:last-child { display: none; }
+      }
       `}</style>
 
-      <div className="hero">
+      {/* HERO: portrait left, title + intro right */}
+      <div className="about-hero">
+      <div className="about-portrait-wrap">
+      <img src={artistPortrait} alt="The artist" />
+      </div>
+      <div className="about-hero-text">
       <h1 className="hero-title">The<br /><span className="flow">Artist</span></h1>
       <p className="hero-sub">
       Handpainted mixed media from someone who lives and breathes the music.
       </p>
       </div>
-
-      {/* PORTRAIT — replace the div contents with <img src={portrait} /> when ready */}
-      <div className="about-portrait">🎨</div>
+      </div>
 
       {/* STATS */}
       <div className="about-stats">
@@ -1315,13 +1275,19 @@ function AboutPage() {
       </div>
       </section>
 
-      {/* ADDITIONAL PHOTOS — replace placeholders with real lifestyle/studio shots */}
+      {/* PHOTO STRIP */}
       <section>
       <div className="section-label" style={{ color: "var(--dusty-rose)" }}>~ in the studio</div>
-      <div className="about-photo-grid">
-      {[1, 2, 3, 4].map((i) => (
-        <div className="about-photo" key={i}>📸</div>
-      ))}
+      <div className="about-photo-strip">
+      <div className="about-photo">
+      <img src={family1} alt="Family" />
+      </div>
+      <div className="about-photo">
+      <img src={familybw} alt="Family" />
+      </div>
+      <div className="about-photo">
+      <img src={studio1} alt="In the studio" />
+      </div>
       </div>
       </section>
 
@@ -1376,13 +1342,7 @@ export default function App() {
         color: var(--text); min-height: 100vh; padding: 40px 20px;
         max-width: 720px; margin: 0 auto;
       }
-      /* ============================================
-       *          NAVIGATION
-       *          Desktop: sticky top bar, logo left, links right
-       *          Mobile: logo-only top bar + fixed bottom tab bar
-       *          ============================================ */
 
-      /* ---- TOP BAR (both breakpoints) ---- */
       .topnav {
         position: fixed; top: 0; left: 0; right: 0; z-index: 150;
         background: transparent; border-bottom: 1px solid transparent;
@@ -1400,7 +1360,6 @@ export default function App() {
       .topnav-logo { flex-shrink: 0; }
       .topnav-logo img { height: 28px; width: auto; display: block; }
 
-      /* Desktop nav links (hidden on mobile) */
       .topnav-links {
         display: flex; align-items: center; gap: 2px;
       }
@@ -1419,7 +1378,6 @@ export default function App() {
       }
       .nav-link.active::after { left: 16px; right: 16px; }
 
-      /* ---- BOTTOM TAB BAR (mobile only) ---- */
       .bottomnav {
         display: none;
         position: fixed; bottom: 0; left: 0; right: 0; z-index: 150;
@@ -1444,7 +1402,6 @@ export default function App() {
       .bottomnav-btn svg { width: 22px; height: 22px; transition: transform 0.15s ease; }
       .bottomnav-btn.active svg { transform: translateY(-1px); }
 
-      /* Active indicator dot above icon */
       .bottomnav-btn::before {
         content: ''; display: block; width: 4px; height: 4px;
         border-radius: 50%; background: var(--text);
@@ -1454,11 +1411,9 @@ export default function App() {
       .bottomnav-btn { position: relative; }
       .bottomnav-btn.active::before { opacity: 1; }
 
-      /* ---- RESPONSIVE BREAKPOINTS ---- */
       @media (max-width: 640px) {
         .topnav-links { display: none; }
         .bottomnav { display: block; }
-        /* Extra bottom padding so content clears the bottom bar */
         .page { padding-bottom: 80px; }
       }
       @media (min-width: 641px) {
@@ -1537,7 +1492,6 @@ export default function App() {
         <img src={logo} alt="Visual Frequencies Studios" />
       )}
       </div>
-      {/* Desktop only — hidden on mobile via CSS */}
       <div className="topnav-links">
       {TABS.map((tab) => (
         <button key={tab.id} className={`nav-link${activeTab === tab.id ? " active" : ""}`}
@@ -1547,13 +1501,12 @@ export default function App() {
       </div>
       </nav>
 
-      {/* BOTTOM TAB BAR — mobile only, shown via CSS */}
+      {/* BOTTOM TAB BAR — mobile only */}
       <nav className="bottomnav">
       <div className="bottomnav-inner">
       {TABS.map((tab) => (
         <button key={tab.id} className={`bottomnav-btn${activeTab === tab.id ? " active" : ""}`}
         onClick={() => switchTab(tab.id)}>
-        {/* Icons per tab */}
         {tab.id === "gallery" && (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
           <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
