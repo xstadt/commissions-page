@@ -1168,13 +1168,12 @@ function AboutPage() {
         margin-bottom: 48px; flex-wrap: wrap;
       }
       .about-portrait-wrap {
-        flex: 0 0 200px; min-width: 140px;
+        flex: 0 0 220px; min-width: 140px;
         border-radius: 20px; overflow: hidden;
         border: 1px solid var(--border);
-        aspect-ratio: 3/4;
       }
       .about-portrait-wrap img {
-        width: 100%; height: 100%; object-fit: cover; display: block;
+        width: 100%; height: auto; display: block;
       }
       .about-hero-text {
         flex: 1; min-width: 200px; padding-top: 4px;
@@ -1209,7 +1208,7 @@ function AboutPage() {
         margin-top: 20px;
       }
       .about-photo {
-        aspect-ratio: 1/1; border-radius: 14px; overflow: hidden;
+        aspect-ratio: 4/3; border-radius: 14px; overflow: hidden;
         border: 1px solid var(--border);
         background: linear-gradient(145deg, #1e1b17, #141210);
       }
