@@ -1208,12 +1208,12 @@ function AboutPage() {
         margin-top: 20px;
       }
       .about-photo {
-        aspect-ratio: 4/3; border-radius: 14px; overflow: hidden;
+        border-radius: 14px; overflow: hidden;
         border: 1px solid var(--border);
         background: linear-gradient(145deg, #1e1b17, #141210);
       }
       .about-photo img {
-        width: 100%; height: 100%; object-fit: cover; display: block;
+        width: 100%; height: auto; display: block;
         transition: transform 0.4s ease;
       }
       .about-photo:hover img { transform: scale(1.04); }
