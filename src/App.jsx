@@ -1,68 +1,42 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import logo from "./logo.png";
-import artistPortrait from "./artist-portrait.JPG";
-import family1 from "./family1.jpg";
-import familybw from "./familybw.jpg";
-import studio1 from "./studio1.jpg";
+import { client, urlFor } from "./sanityClient";
 
 /*
  * ========================================
- * VISUAL FREQUENCIES STUDIOS — V7
+ * VISUAL FREQUENCIES STUDIOS — V8 (Sanity)
  * ========================================
  *
- * CHANGES FROM V6:
- * - Quick-add controls: moved to bottom-right of image, squircle shape, more padding
- * - Mobile: persistent + button visible on touch devices (no hover needed)
- * - "In cart" indicator on product cards showing qty per color
- * - Subtle hover effects on all action buttons
- * - Scroll to top on tab switch
- * - Dynamic copyright year
- * - Various polish
+ * CHANGES FROM V7:
+ * - Products, gallery items, and site settings now load from Sanity CMS
+ * - Local image imports removed (portrait / family / studio come from Sanity)
+ * - Real photos render on product cards, modal, cart thumbs, gallery, lightbox
+ * - Loading skeletons + empty states for both grids
+ * - Commission status, About copy, stats, and footer links are editable in Studio
+ *
+ * NOTE: sanityClient.js must exist at src/sanityClient.js
  */
-
-const COMMISSION_STATUS = "open";
 
 // Formspree endpoint — handles both commissions and bottle orders.
 // A hidden form_type field tells them apart in your inbox.
 const FORMSPREE_ENDPOINT = "https://formspree.io/f/mgodnbvr";
 
 // ==========================================
-// PRODUCT CATALOG
+// GROQ QUERIES
 // ==========================================
-const PRODUCTS = [
-  {
-    id: "classic-18",
-    name: "The Daily",
-    size: "18 oz",
-    price: 45,
-    description: "Compact everyday carry. Perfect for coffee-table size — fits in any bag, cupholder, or hand. Great for a single design motif or tight composition.",
-    colors: ["Sage Wash", "Dusty Rose", "Deep Indigo"],
-  },
-{
-  id: "classic-24",
-  name: "The Standard",
-  size: "24 oz",
-  price: 55,
-  description: "The most popular size. Enough surface for a full wraparound scene without being too bulky. The sweet spot for most custom work.",
-  colors: ["Sage Wash", "Dusty Rose", "Deep Indigo", "Warm Gold"],
-},
-{
-  id: "classic-32",
-  name: "The Statement",
-  size: "32 oz",
-  price: 65,
-  description: "More room to work with — ideal for detailed scenes, full band artwork, or layered compositions that need breathing room.",
-  colors: ["Sage Wash", "Dusty Rose", "Deep Indigo", "Warm Gold"],
-},
-{
-  id: "classic-40",
-  name: "The Canvas",
-  size: "40 oz",
-  price: 75,
-  description: "Maximum surface area for maximum expression. A true walking art piece. Best for elaborate, multi-element designs.",
-  colors: ["Sage Wash", "Dusty Rose", "Deep Indigo", "Warm Gold", "Midnight"],
-},
-];
+const PRODUCTS_QUERY = `*[_type == "product"] | order(order asc) {
+  "id": slug.current,
+  name, size, price, description, colors, image
+}`;
+
+const GALLERY_QUERY = `*[_type == "galleryItem"] | order(order asc) {
+  "id": _id, title, category, medium, year, image
+}`;
+
+const SETTINGS_QUERY = `*[_type == "siteSettings"][0]{
+  commissionStatus, portrait, aboutIntro, stats, story, approach,
+  studioPhotos, instagramUrl, tiktokUrl, contactEmail
+}`;
 
 // ==========================================
 // HELPERS
@@ -89,16 +63,25 @@ function validateEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-function Footer() {
+function Footer({ settings }) {
+  const links = [
+    { label: "Instagram", href: settings?.instagramUrl },
+    { label: "TikTok", href: settings?.tiktokUrl },
+    { label: "Email", href: settings?.contactEmail ? `mailto:${settings.contactEmail}` : null },
+  ].filter((l) => l.href);
+
   return (
     <footer style={{ borderTop: "1px solid var(--border)", marginTop: 64, paddingTop: 32, paddingBottom: 24, textAlign: "center" }}>
-    <div style={{ display: "flex", justifyContent: "center", gap: 24, marginBottom: 16, flexWrap: "wrap" }}>
-    {["Instagram", "TikTok", "Email"].map((label) => (
-      <a key={label} href="#" style={{ color: "var(--text-dim)", fontSize: 13, fontWeight: 500, textDecoration: "none", transition: "color 0.15s" }}
-      onMouseEnter={e => e.target.style.color = "var(--text)"}
-      onMouseLeave={e => e.target.style.color = "var(--text-dim)"}>{label}</a>
-    ))}
-    </div>
+    {links.length > 0 && (
+      <div style={{ display: "flex", justifyContent: "center", gap: 24, marginBottom: 16, flexWrap: "wrap" }}>
+      {links.map(({ label, href }) => (
+        <a key={label} href={href} target="_blank" rel="noreferrer"
+        style={{ color: "var(--text-dim)", fontSize: 13, fontWeight: 500, textDecoration: "none", transition: "color 0.15s" }}
+        onMouseEnter={(e) => (e.target.style.color = "var(--text)")}
+        onMouseLeave={(e) => (e.target.style.color = "var(--text-dim)")}>{label}</a>
+      ))}
+      </div>
+    )}
     <div style={{ fontSize: 12, color: "#5a5047", fontWeight: 300 }}>
     © {new Date().getFullYear()} Visual Frequencies Studios · All pieces are original handpainted works
     </div>
@@ -106,16 +89,28 @@ function Footer() {
   );
 }
 
+// Shared skeleton styles, injected once at App level
+const SKELETON_CSS = `
+.skel-shimmer {
+  background: var(--border);
+  animation: skelPulse 1.5s ease-in-out infinite;
+}
+.skel-line { height: 12px; border-radius: 6px; }
+@keyframes skelPulse { 0%,100% { opacity: 0.35; } 50% { opacity: 0.65; } }
+`;
+
 // ==========================================
 // PAGE: COMMISSIONS
 // ==========================================
 
-function CommissionsPage() {
+function CommissionsPage({ settings }) {
   const [form, setForm] = useState({ name: "", email: "", description: "", size: "", timeline: "" });
   const [sent, setSent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [errors, setErrors] = useState({});
+
+  const status = settings?.commissionStatus || "open";
 
   const update = (field) => (e) => {
     setForm({ ...form, [field]: e.target.value });
@@ -160,9 +155,9 @@ function CommissionsPage() {
 
   return (
     <>
-    <div className={`status ${COMMISSION_STATUS}`}>
+    <div className={`status ${status}`}>
     <span className="status-dot" />
-    {COMMISSION_STATUS === "open" ? "Currently Accepting Work" : "On a Break"}
+    {status === "open" ? "Currently Accepting Work" : "On a Break"}
     </div>
     <div className="hero">
     <h1 className="hero-title">Visual Frequencies<br /><span className="flow">Studios</span></h1>
@@ -240,7 +235,7 @@ function CommissionsPage() {
       </div>
     )}
     </section>
-    <Footer />
+    <Footer settings={settings} />
     </>
   );
 }
@@ -250,7 +245,11 @@ function CommissionsPage() {
 // PAGE: WATER BOTTLES
 // ==========================================
 
-function WaterBottlePage() {
+function WaterBottlePage({ settings }) {
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+
   const [cart, setCart] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [cartOpen, setCartOpen] = useState(false);
@@ -264,6 +263,23 @@ function WaterBottlePage() {
   const [quickCounts, setQuickCounts] = useState({});
   const [pendingQuickAdd, setPendingQuickAdd] = useState(null);
   const [mobileActiveCard, setMobileActiveCard] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    client.fetch(PRODUCTS_QUERY)
+    .then((data) => {
+      if (cancelled) return;
+      setProducts(Array.isArray(data) ? data : []);
+      setLoading(false);
+    })
+    .catch((err) => {
+      if (cancelled) return;
+      console.error("Sanity products fetch failed:", err);
+      setLoadError(true);
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   const showToast = useCallback((msg) => {
     setToast(null);
@@ -379,6 +395,8 @@ function WaterBottlePage() {
         transition: all 0.25s ease; position: relative;
       }
       .product-card:hover { border-color: var(--text-dim); transform: translateY(-2px); }
+      .product-card.is-skeleton { pointer-events: none; }
+      .product-card.is-skeleton:hover { transform: none; border-color: var(--border); }
       .product-img-wrap {
         width: 100%; aspect-ratio: 1/1; position: relative; overflow: hidden;
         background: linear-gradient(145deg, #1e1b17, #141210);
@@ -388,6 +406,7 @@ function WaterBottlePage() {
         background: linear-gradient(135deg, rgba(143,173,139,0.06) 0%, rgba(184,165,204,0.06) 50%, rgba(212,160,160,0.06) 100%);
         pointer-events: none;
       }
+      .product-img-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
       .product-img-emoji {
         width: 100%; height: 100%; display: flex;
         align-items: center; justify-content: center;
@@ -505,6 +524,11 @@ function WaterBottlePage() {
       .modal-img-placeholder::after {
         content: ''; position: absolute; inset: 0;
         background: linear-gradient(135deg, rgba(143,173,139,0.08) 0%, rgba(184,165,204,0.08) 50%, rgba(212,160,160,0.08) 100%);
+        pointer-events: none;
+      }
+      .modal-img-placeholder img {
+        width: 100%; height: 100%; object-fit: cover; display: block;
+        border-radius: 20px 20px 0 0;
       }
       .modal-body { padding: 24px; }
       .modal-close {
@@ -602,8 +626,9 @@ function WaterBottlePage() {
             width: 56px; height: 56px; border-radius: 10px;
             background: linear-gradient(145deg, #1e1b17, #141210); flex-shrink: 0;
             display: flex; align-items: center; justify-content: center;
-            font-size: 20px; color: var(--border);
+            font-size: 20px; color: var(--border); overflow: hidden;
           }
+          .cart-item-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
           .cart-item-info { flex: 1; min-width: 0; }
           .cart-item-name { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
           .cart-item-detail { font-size: 12px; color: var(--text-dim); font-weight: 300; }
@@ -612,7 +637,7 @@ function WaterBottlePage() {
           .cart-item-price { font-weight: 700; font-size: 14px; color: var(--sage); }
           .cart-remove { background: none; border: none; color: var(--text-dim); font-size: 18px; cursor: pointer; padding: 2px; line-height: 1; opacity: 0.5; transition: opacity 0.15s, color 0.15s; }
           .cart-remove:hover { opacity: 1; color: var(--dusty-rose); }
-          .cart-qty { display: flex; align-items: center; gap: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-top: 8px; }
+          .cart-qty { display: flex; align-items: center; gap: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-top: 8px; width: fit-content; }
           .cart-qty-btn {
             width: 26px; height: 24px; border: none; background: transparent;
             color: var(--text-dim); font-size: 14px; cursor: pointer;
@@ -643,6 +668,7 @@ function WaterBottlePage() {
             background: var(--surface); border: 1px solid var(--border);
             border-radius: 20px; width: 90%; max-width: 440px;
             padding: 32px 24px; animation: modalSlideUp 0.3s ease;
+            max-height: 90vh; overflow-y: auto;
           }
           .checkout-title { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
           .checkout-subtitle { font-size: 14px; color: var(--text-dim); font-weight: 300; margin-bottom: 24px; }
@@ -663,6 +689,7 @@ function WaterBottlePage() {
             background: var(--surface); border: 1px solid var(--border);
             border-radius: 20px; width: 90%; max-width: 420px;
             padding: 28px 24px; animation: modalSlideUp 0.3s ease;
+            max-height: 90vh; overflow-y: auto;
           }
           .quick-prompt-title { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
           .quick-prompt-sub { font-size: 13px; color: var(--text-dim); font-weight: 300; margin-bottom: 20px; }
@@ -683,66 +710,97 @@ function WaterBottlePage() {
 
           <section>
           <div className="section-label" style={{ color: "var(--soft-teal)" }}>~ choose your bottle</div>
-          <div className="shop-grid">
-          {PRODUCTS.map((product) => {
-            const summary = getCartSummary(product.id);
-            const qc = quickCounts[product.id] || 0;
-            const isMobileActive = mobileActiveCard === product.id;
 
-            return (
-              <div className="product-card" key={product.id}>
-              <div className="product-img-wrap" onClick={() => setSelectedProduct(product)}>
-              <div className="product-img-emoji">🫗</div>
+          {loading ? (
+            <div className="shop-grid">
+            {[1, 2, 3, 4].map((i) => (
+              <div className="product-card is-skeleton" key={i}>
+              <div className="product-img-wrap skel-shimmer" />
+              <div className="product-info">
+              <div className="skel-line skel-shimmer" style={{ width: "60%" }} />
+              <div className="skel-line skel-shimmer" style={{ width: "35%", marginTop: 10 }} />
+              </div>
+              </div>
+            ))}
+            </div>
+          ) : loadError ? (
+            <div className="card">
+            <p>Couldn't load the shop right now. Please refresh, or reach out through the Commissions page.</p>
+            </div>
+          ) : products.length === 0 ? (
+            <div className="card">
+            <p>New bottles coming soon. Check back shortly.</p>
+            </div>
+          ) : (
+            <div className="shop-grid">
+            {products.map((product) => {
+              const summary = getCartSummary(product.id);
+              const qc = quickCounts[product.id] || 0;
+              const isMobileActive = mobileActiveCard === product.id;
 
-              {summary && (
-                <div className="in-cart-badge">
-                {Object.entries(summary.byColor).map(([color, qty]) => (
-                  <span className="in-cart-pill" key={color}>
-                  <span className="in-cart-dot" />
-                  {qty} × {color}
-                  </span>
-                ))}
+              return (
+                <div className="product-card" key={product.id}>
+                <div className="product-img-wrap" onClick={() => setSelectedProduct(product)}>
+                {product.image ? (
+                  <img
+                  src={urlFor(product.image).width(600).height(600).quality(75).auto("format").url()}
+                  alt={product.name}
+                  loading="lazy"
+                  />
+                ) : (
+                  <div className="product-img-emoji">🫗</div>
+                )}
+
+                {summary && (
+                  <div className="in-cart-badge">
+                  {Object.entries(summary.byColor).map(([color, qty]) => (
+                    <span className="in-cart-pill" key={color}>
+                    <span className="in-cart-dot" />
+                    {qty} × {color}
+                    </span>
+                  ))}
+                  </div>
+                )}
+
+                <button
+                className="mobile-add-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isMobileActive) {
+                    setMobileActiveCard(null);
+                  } else {
+                    setMobileActiveCard(product.id);
+                    if (qc === 0) quickIncrement(product.id);
+                  }
+                }}
+                >+</button>
+
+                <div className={`qa-wrap ${isMobileActive ? "mobile-visible" : ""}`}>
+                {qc > 0 && (
+                  <button className="qa-btn" onClick={(e) => { e.stopPropagation(); quickDecrement(product.id); }}>−</button>
+                )}
+                {qc > 0 && <span className="qa-count">{qc}</span>}
+                <button className="qa-btn" onClick={(e) => { e.stopPropagation(); quickIncrement(product.id); }}>+</button>
+                {qc > 0 && (
+                  <button className="qa-cart-btn" onClick={(e) => { e.stopPropagation(); quickAddToCart(product); }}>
+                  🛒 Add
+                  </button>
+                )}
                 </div>
-              )}
+                </div>
 
-              <button
-              className="mobile-add-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (isMobileActive) {
-                  setMobileActiveCard(null);
-                } else {
-                  setMobileActiveCard(product.id);
-                  if (qc === 0) quickIncrement(product.id);
-                }
-              }}
-              >+</button>
-
-              <div className={`qa-wrap ${isMobileActive ? "mobile-visible" : ""}`}>
-              {qc > 0 && (
-                <button className="qa-btn" onClick={(e) => { e.stopPropagation(); quickDecrement(product.id); }}>−</button>
-              )}
-              {qc > 0 && <span className="qa-count">{qc}</span>}
-              <button className="qa-btn" onClick={(e) => { e.stopPropagation(); quickIncrement(product.id); }}>+</button>
-              {qc > 0 && (
-                <button className="qa-cart-btn" onClick={(e) => { e.stopPropagation(); quickAddToCart(product); }}>
-                🛒 Add
-                </button>
-              )}
-              </div>
-              </div>
-
-              <div className="product-info" onClick={() => setSelectedProduct(product)}>
-              <div className="product-name">{product.name}</div>
-              <div className="product-meta">
-              <span className="product-size">{product.size}</span>
-              <span className="product-price">${product.price}</span>
-              </div>
-              </div>
-              </div>
-            );
-          })}
-          </div>
+                <div className="product-info" onClick={() => setSelectedProduct(product)}>
+                <div className="product-name">{product.name}</div>
+                <div className="product-meta">
+                <span className="product-size">{product.size}</span>
+                <span className="product-price">${product.price}</span>
+                </div>
+                </div>
+                </div>
+              );
+            })}
+            </div>
+          )}
           </section>
 
           <section>
@@ -756,7 +814,7 @@ function WaterBottlePage() {
           </div>
           </section>
 
-          <Footer />
+          <Footer settings={settings} />
 
           {cartCount > 0 && (
             <button className="cart-fab" onClick={() => setCartOpen(true)}>
@@ -796,7 +854,14 @@ function WaterBottlePage() {
               <div className="cart-empty">Your cart is empty.<br />Tap a bottle to get started.</div>
             ) : cart.map((item) => (
               <div className="cart-item" key={item.cartId}>
-              <div className="cart-item-thumb">🫗</div>
+              <div className="cart-item-thumb">
+              {item.image ? (
+                <img
+                src={urlFor(item.image).width(112).height(112).quality(70).auto("format").url()}
+                alt=""
+                />
+              ) : "🫗"}
+              </div>
               <div className="cart-item-info">
               <div className="cart-item-name">{item.name}</div>
               <div className="cart-item-detail">{item.size} · {item.selectedColor}</div>
@@ -894,21 +959,30 @@ function ProductModal({ product, onClose, onAdd }) {
   const [note, setNote] = useState("");
   const [qty, setQty] = useState(1);
 
+  const colors = product.colors || [];
+
   return (
     <div className="overlay" onClick={onClose}>
     <div className="product-modal" onClick={(e) => e.stopPropagation()} style={{ position: "relative" }}>
     <button className="modal-close" onClick={onClose}>✕</button>
-    <div className="modal-img-placeholder">🫗</div>
+    <div className="modal-img-placeholder">
+    {product.image ? (
+      <img
+      src={urlFor(product.image).width(800).height(600).quality(80).auto("format").url()}
+      alt={product.name}
+      />
+    ) : "🫗"}
+    </div>
     <div className="modal-body">
     <div className="modal-title">{product.name}</div>
     <div className="modal-size-price">
     <span className="modal-size">{product.size}</span>
     <span className="modal-price">${product.price * qty}</span>
     </div>
-    <div className="modal-desc">{product.description}</div>
+    {product.description && <div className="modal-desc">{product.description}</div>}
     <div className="modal-section-label">Base Palette</div>
     <div className="color-options">
-    {product.colors.map((c) => (
+    {colors.map((c) => (
       <button key={c} className={`color-chip ${selectedColor === c ? "selected" : ""}`}
       onClick={() => setSelectedColor(c)}>{c}</button>
     ))}
@@ -939,6 +1013,8 @@ function ProductModal({ product, onClose, onAdd }) {
 function QuickAddPrompt({ product, qty, onClose, onConfirm }) {
   const [color, setColor] = useState("");
   const [note, setNote] = useState("");
+  const colors = product.colors || [];
+
   return (
     <div className="overlay" onClick={onClose}>
     <div className="quick-prompt" onClick={(e) => e.stopPropagation()}>
@@ -946,7 +1022,7 @@ function QuickAddPrompt({ product, qty, onClose, onConfirm }) {
     <div className="quick-prompt-sub">Just need a couple details before we add {qty > 1 ? "these" : "this"} to your cart.</div>
     <div className="modal-section-label">Base Palette</div>
     <div className="color-options">
-    {product.colors.map((c) => (
+    {colors.map((c) => (
       <button key={c} className={`color-chip ${color === c ? "selected" : ""}`}
       onClick={() => setColor(c)}>{c}</button>
     ))}
@@ -970,25 +1046,46 @@ function QuickAddPrompt({ product, qty, onClose, onConfirm }) {
 
 const GALLERY_CATEGORIES = ["All", "Posters", "Prints", "Album Art", "Promo"];
 
-const GALLERY_ITEMS = [
-  { id: 1, title: "Piece Title", category: "Posters", img: null },
-{ id: 2, title: "Piece Title", category: "Album Art", img: null },
-{ id: 3, title: "Piece Title", category: "Prints", img: null },
-{ id: 4, title: "Piece Title", category: "Posters", img: null },
-{ id: 5, title: "Piece Title", category: "Promo", img: null },
-{ id: 6, title: "Piece Title", category: "Prints", img: null },
-{ id: 7, title: "Piece Title", category: "Album Art", img: null },
-{ id: 8, title: "Piece Title", category: "Posters", img: null },
-{ id: 9, title: "Piece Title", category: "Promo", img: null },
-];
-
-function GalleryPage() {
+function GalleryPage({ settings }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [activeFilter, setActiveFilter] = useState("All");
   const [lightbox, setLightbox] = useState(null);
 
+  useEffect(() => {
+    let cancelled = false;
+    client.fetch(GALLERY_QUERY)
+    .then((data) => {
+      if (cancelled) return;
+      setItems(Array.isArray(data) ? data : []);
+      setLoading(false);
+    })
+    .catch((err) => {
+      if (cancelled) return;
+      console.error("Sanity gallery fetch failed:", err);
+      setLoadError(true);
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Close lightbox on Escape
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e) => { if (e.key === "Escape") setLightbox(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightbox]);
+
   const filtered = activeFilter === "All"
-  ? GALLERY_ITEMS
-  : GALLERY_ITEMS.filter((p) => p.category === activeFilter);
+  ? items
+  : items.filter((p) => p.category === activeFilter);
+
+  // Only show filter buttons for categories that actually have work in them
+  const visibleCategories = GALLERY_CATEGORIES.filter(
+    (cat) => cat === "All" || items.some((i) => i.category === cat)
+  );
 
   return (
     <>
@@ -1018,6 +1115,8 @@ function GalleryPage() {
         transition: transform 0.2s ease, border-color 0.2s ease;
       }
       .gallery-item:hover { transform: translateY(-2px); border-color: var(--text-dim); }
+      .gallery-item.is-skeleton { pointer-events: none; }
+      .gallery-item.is-skeleton:hover { transform: none; border-color: var(--border); }
 
       .gallery-placeholder {
         width: 100%; background: linear-gradient(145deg, #1e1b17, #141210);
@@ -1027,6 +1126,10 @@ function GalleryPage() {
       .gallery-placeholder::after {
         content: ''; position: absolute; inset: 0;
         background: linear-gradient(135deg, rgba(143,173,139,0.05) 0%, rgba(184,165,204,0.05) 100%);
+        pointer-events: none;
+      }
+      .gallery-placeholder img {
+        width: 100%; height: 100%; object-fit: cover; display: block;
       }
       .gallery-item:nth-child(odd) .gallery-placeholder { aspect-ratio: 3/4; }
       .gallery-item:nth-child(even) .gallery-placeholder { aspect-ratio: 4/5; }
@@ -1036,7 +1139,8 @@ function GalleryPage() {
         position: absolute; inset: 0; background: rgba(14,13,11,0.7);
         display: flex; flex-direction: column;
         align-items: center; justify-content: center; gap: 4px;
-        opacity: 0; transition: opacity 0.2s ease;
+        opacity: 0; transition: opacity 0.2s ease; z-index: 2;
+        text-align: center; padding: 12px;
       }
       .gallery-item:hover .gallery-overlay { opacity: 1; }
       .gallery-overlay-title {
@@ -1052,31 +1156,41 @@ function GalleryPage() {
         position: fixed; inset: 0; background: rgba(0,0,0,0.92);
         backdrop-filter: blur(8px); z-index: 400;
         display: flex; align-items: center; justify-content: center;
-        animation: overlayIn 0.2s ease;
+        animation: overlayIn 0.2s ease; padding: 24px;
       }
+      @keyframes overlayIn { from { opacity: 0; } to { opacity: 1; } }
       .lightbox-inner {
-        position: relative; max-width: 680px; width: 90%;
+        position: relative; max-width: 680px; width: 100%;
       }
       .lightbox-img {
-        width: 100%; border-radius: 16px;
+        width: 100%; border-radius: 16px; overflow: hidden;
         background: linear-gradient(145deg, #1e1b17, #141210);
-        aspect-ratio: 3/4; display: flex; align-items: center;
+        display: flex; align-items: center;
         justify-content: center; font-size: 64px; color: var(--border);
+        max-height: 72vh;
+      }
+      .lightbox-img img {
+        width: 100%; height: auto; display: block;
+        max-height: 72vh; object-fit: contain;
       }
       .lightbox-info {
         margin-top: 16px; display: flex;
-        justify-content: space-between; align-items: center;
+        justify-content: space-between; align-items: center; gap: 16px;
       }
       .lightbox-title { font-size: 16px; font-weight: 700; }
       .lightbox-cat { font-size: 12px; color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase; }
+      .lightbox-meta { font-size: 12px; color: var(--text-dim); text-align: right; font-weight: 300; }
       .lightbox-close {
         position: absolute; top: -16px; right: -16px; width: 40px; height: 40px;
         border-radius: 50%; background: var(--surface); border: 1px solid var(--border);
         color: var(--text); font-size: 18px; cursor: pointer;
         display: flex; align-items: center; justify-content: center;
-        transition: border-color 0.15s;
+        transition: border-color 0.15s; z-index: 2;
       }
       .lightbox-close:hover { border-color: var(--text-dim); }
+      @media (max-width: 560px) {
+        .lightbox-close { top: 8px; right: 8px; background: rgba(0,0,0,0.6); }
+      }
       `}</style>
 
       <div style={{ textAlign: "center", marginBottom: 48 }}>
@@ -1094,43 +1208,70 @@ function GalleryPage() {
       </div>
 
       <section>
-      <div className="gallery-filters">
-      {GALLERY_CATEGORIES.map((cat) => (
-        <button
-        key={cat}
-        className={`filter-btn ${activeFilter === cat ? "active" : ""}`}
-        onClick={() => setActiveFilter(cat)}
-        >{cat}</button>
-      ))}
-      </div>
+      {!loading && !loadError && items.length > 0 && (
+        <div className="gallery-filters">
+        {visibleCategories.map((cat) => (
+          <button
+          key={cat}
+          className={`filter-btn ${activeFilter === cat ? "active" : ""}`}
+          onClick={() => setActiveFilter(cat)}
+          >{cat}</button>
+        ))}
+        </div>
+      )}
 
-      <div className="gallery-grid">
-      {filtered.map((item) => (
-        <div className="gallery-item" key={item.id} onClick={() => setLightbox(item)}>
-        <div className="gallery-placeholder">
-        {item.img
-          ? <img src={item.img} alt={item.title} style={{ width: "100%", display: "block" }} />
-          : "🎨"
-        }
-        <div className="gallery-overlay">
-        <div className="gallery-overlay-title">{item.title}</div>
-        <div className="gallery-overlay-cat">{item.category}</div>
+      {loading ? (
+        <div className="gallery-grid">
+        {[1, 2, 3, 4, 5, 6].map((i) => (
+          <div className="gallery-item is-skeleton" key={i}>
+          <div className="gallery-placeholder skel-shimmer" />
+          </div>
+        ))}
         </div>
+      ) : loadError ? (
+        <div className="card">
+        <p>Couldn't load the gallery right now. Please refresh and try again.</p>
         </div>
+      ) : items.length === 0 ? (
+        <div className="card">
+        <p>New work coming soon.</p>
         </div>
-      ))}
-      </div>
+      ) : (
+        <div className="gallery-grid">
+        {filtered.map((item) => (
+          <div className="gallery-item" key={item.id} onClick={() => setLightbox(item)}>
+          <div className="gallery-placeholder">
+          {item.image
+            ? <img
+            src={urlFor(item.image).width(600).quality(75).auto("format").url()}
+            alt={item.title}
+            loading="lazy"
+            />
+            : "🎨"
+          }
+          <div className="gallery-overlay">
+          <div className="gallery-overlay-title">{item.title}</div>
+          <div className="gallery-overlay-cat">{item.category}</div>
+          </div>
+          </div>
+          </div>
+        ))}
+        </div>
+      )}
       </section>
 
-      <Footer />
+      <Footer settings={settings} />
 
       {lightbox && (
         <div className="lightbox" onClick={() => setLightbox(null)}>
         <div className="lightbox-inner" onClick={(e) => e.stopPropagation()}>
         <button className="lightbox-close" onClick={() => setLightbox(null)}>✕</button>
         <div className="lightbox-img">
-        {lightbox.img
-          ? <img src={lightbox.img} alt={lightbox.title} style={{ width: "100%", borderRadius: 16 }} />
+        {lightbox.image
+          ? <img
+          src={urlFor(lightbox.image).width(1400).quality(85).auto("format").url()}
+          alt={lightbox.title}
+          />
           : "🎨"
         }
         </div>
@@ -1139,6 +1280,13 @@ function GalleryPage() {
         <div className="lightbox-title">{lightbox.title}</div>
         <div className="lightbox-cat">{lightbox.category}</div>
         </div>
+        {(lightbox.medium || lightbox.year) && (
+          <div className="lightbox-meta">
+          {lightbox.medium}
+          {lightbox.medium && lightbox.year ? " · " : ""}
+          {lightbox.year}
+          </div>
+        )}
         </div>
         </div>
         </div>
@@ -1152,17 +1300,13 @@ function GalleryPage() {
 // PAGE: ABOUT
 // ==========================================
 
-const ABOUT_STATS = [
-  { value: "100+", label: "Pieces Created" },
-{ value: "5+", label: "Years Painting" },
-{ value: "∞", label: "Vibes Given" },
-];
+function AboutPage({ settings }) {
+  const stats = settings?.stats?.length ? settings.stats : [];
+  const studioPhotos = settings?.studioPhotos || [];
 
-function AboutPage() {
   return (
     <>
     <style>{`
-      /* ---- ABOUT HERO (portrait + intro side by side) ---- */
       .about-hero {
         display: flex; gap: 24px; align-items: flex-start;
         margin-bottom: 48px; flex-wrap: wrap;
@@ -1171,16 +1315,17 @@ function AboutPage() {
         flex: 0 0 220px; min-width: 140px;
         border-radius: 20px; overflow: hidden;
         border: 1px solid var(--border);
+        background: linear-gradient(145deg, #1e1b17, #141210);
+        aspect-ratio: 3/4;
       }
       .about-portrait-wrap img {
-        width: 100%; height: auto; display: block;
+        width: 100%; height: 100%; object-fit: cover; display: block;
       }
       .about-hero-text {
         flex: 1; min-width: 200px; padding-top: 4px;
       }
       .about-hero-text h1 { margin-bottom: 16px; }
 
-      /* ---- STATS ROW ---- */
       .about-stats {
         display: flex; gap: 0; margin-bottom: 48px;
         border: 1px solid var(--border); border-radius: 16px; overflow: hidden;
@@ -1200,10 +1345,9 @@ function AboutPage() {
         letter-spacing: 1px; text-transform: uppercase;
       }
 
-      /* ---- PHOTO STRIP ---- */
       .about-photo-strip {
         display: grid;
-        grid-template-columns: 1fr 1fr 1fr;
+        grid-template-columns: repeat(3, 1fr);
         gap: 10px;
         margin-top: 20px;
       }
@@ -1211,86 +1355,87 @@ function AboutPage() {
         border-radius: 14px; overflow: hidden;
         border: 1px solid var(--border);
         background: linear-gradient(145deg, #1e1b17, #141210);
+        aspect-ratio: 1/1;
       }
       .about-photo img {
-        width: 100%; height: auto; display: block;
+        width: 100%; height: 100%; object-fit: cover; display: block;
         transition: transform 0.4s ease;
       }
       .about-photo:hover img { transform: scale(1.04); }
 
+      .about-body { white-space: pre-line; }
+
       @media (max-width: 480px) {
         .about-portrait-wrap { flex: 0 0 130px; }
         .about-photo-strip { grid-template-columns: 1fr 1fr; }
-        .about-photo:last-child { display: none; }
+        .about-photo:nth-child(n+3) { display: none; }
       }
       `}</style>
 
-      {/* HERO: portrait left, title + intro right */}
       <div className="about-hero">
-      <div className="about-portrait-wrap">
-      <img src={artistPortrait} alt="The artist" />
-      </div>
+      {settings?.portrait && (
+        <div className="about-portrait-wrap">
+        <img
+        src={urlFor(settings.portrait).width(600).height(800).quality(80).auto("format").url()}
+        alt="The artist"
+        />
+        </div>
+      )}
       <div className="about-hero-text">
       <h1 className="hero-title">The<br /><span className="flow">Artist</span></h1>
       <p className="hero-sub">
-      Handpainted mixed media from someone who lives and breathes the music.
+      {settings?.aboutIntro || "Handpainted mixed media from someone who lives and breathes the music."}
       </p>
       </div>
       </div>
 
-      {/* STATS */}
-      <div className="about-stats">
-      {ABOUT_STATS.map((s) => (
-        <div className="about-stat" key={s.label}>
-        <div className="about-stat-value">{s.value}</div>
-        <div className="about-stat-label">{s.label}</div>
+      {stats.length > 0 && (
+        <div className="about-stats">
+        {stats.map((s, i) => (
+          <div className="about-stat" key={i}>
+          <div className="about-stat-value">{s.value}</div>
+          <div className="about-stat-label">{s.label}</div>
+          </div>
+        ))}
         </div>
-      ))}
-      </div>
+      )}
 
-      {/* BIO */}
-      <section>
-      <div className="section-label" style={{ color: "var(--lavender)" }}>~ the story</div>
-      <div className="card">
-      <p>
-      {/* Replace this with the real bio */}
-      This is where the artist's story goes. Talk about how you got started,
-      what drives the work, the connection to music and culture. Keep it personal —
-      people commission art from <strong>people</strong>, not studios.
-      </p>
-      </div>
-      </section>
+      {settings?.story && (
+        <section>
+        <div className="section-label" style={{ color: "var(--lavender)" }}>~ the story</div>
+        <div className="card">
+        <p className="about-body">{settings.story}</p>
+        </div>
+        </section>
+      )}
 
-      {/* APPROACH */}
-      <section>
-      <div className="section-label" style={{ color: "var(--sage)" }}>~ the approach</div>
-      <div className="card">
-      <p>
-      {/* Replace this with a description of the artistic process/style */}
-      Talk about your medium, your process, what makes your style distinct.
-      The psychedelic mixed media aesthetic, the faded washes, the tie-dye warmth —
-      what does it mean to you and where does it come from?
-      </p>
-      </div>
-      </section>
+      {settings?.approach && (
+        <section>
+        <div className="section-label" style={{ color: "var(--sage)" }}>~ the approach</div>
+        <div className="card">
+        <p className="about-body">{settings.approach}</p>
+        </div>
+        </section>
+      )}
 
-      {/* PHOTO STRIP */}
-      <section>
-      <div className="section-label" style={{ color: "var(--dusty-rose)" }}>~ in the studio</div>
-      <div className="about-photo-strip">
-      <div className="about-photo">
-      <img src={family1} alt="Family" />
-      </div>
-      <div className="about-photo">
-      <img src={familybw} alt="Family" />
-      </div>
-      <div className="about-photo">
-      <img src={studio1} alt="In the studio" />
-      </div>
-      </div>
-      </section>
+      {studioPhotos.length > 0 && (
+        <section>
+        <div className="section-label" style={{ color: "var(--dusty-rose)" }}>~ in the studio</div>
+        <div className="about-photo-strip">
+        {studioPhotos.map((photo, i) => (
+          <div className="about-photo" key={photo._key || i}>
+          <img
+          src={urlFor(photo).width(500).height(500).quality(78).auto("format").url()}
+          alt={photo.alt || "In the studio"}
+          loading="lazy"
+          />
+          </div>
+        ))}
+        </div>
+        </section>
+      )}
 
-      <Footer />
+      <Footer settings={settings} />
       </>
   );
 }
@@ -1312,12 +1457,23 @@ const TABS = [
 export default function App() {
   const [activeTab, setActiveTab] = useState("gallery");
   const [scrolled, setScrolled] = useState(false);
+  const [settings, setSettings] = useState(null);
+
   const ActiveComponent = TABS.find((t) => t.id === activeTab)?.component || TABS[0].component;
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    client.fetch(SETTINGS_QUERY)
+    .then((data) => setSettings(data || {}))
+    .catch((err) => {
+      console.error("Sanity settings fetch failed:", err);
+      setSettings({});
+    });
   }, []);
 
   const switchTab = (tabId) => {
@@ -1341,6 +1497,8 @@ export default function App() {
         color: var(--text); min-height: 100vh; padding: 40px 20px;
         max-width: 720px; margin: 0 auto;
       }
+
+      ${SKELETON_CSS}
 
       .topnav {
         position: fixed; top: 0; left: 0; right: 0; z-index: 150;
@@ -1396,6 +1554,7 @@ export default function App() {
         color: var(--text-dim); font-family: 'Inter', sans-serif;
         font-size: 10px; font-weight: 600; letter-spacing: 0.3px;
         transition: color 0.15s ease; -webkit-tap-highlight-color: transparent;
+        position: relative;
       }
       .bottomnav-btn.active { color: var(--text); }
       .bottomnav-btn svg { width: 22px; height: 22px; transition: transform 0.15s ease; }
@@ -1407,19 +1566,15 @@ export default function App() {
         position: absolute; top: 6px;
         opacity: 0; transition: opacity 0.15s ease;
       }
-      .bottomnav-btn { position: relative; }
       .bottomnav-btn.active::before { opacity: 1; }
 
       @media (max-width: 640px) {
         .topnav-links { display: none; }
         .bottomnav { display: block; }
-        .page { padding-bottom: 80px; }
+        .page { padding-bottom: 80px; padding-top: 72px; }
       }
       @media (min-width: 641px) {
         .page { padding-top: 80px; }
-      }
-      @media (max-width: 640px) {
-        .page { padding-top: 72px; }
       }
       .status {
         display: inline-flex; align-items: center; gap: 8px; padding: 6px 16px;
@@ -1534,7 +1689,7 @@ export default function App() {
       </nav>
 
       <div className="tab-content" key={activeTab}>
-      <ActiveComponent />
+      <ActiveComponent settings={settings} />
       </div>
       </div>
   );

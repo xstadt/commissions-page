@@ -1,0 +1,70 @@
+export default {
+    name: 'product',
+    title: 'Water Bottles',
+    type: 'document',
+    fields: [
+        {
+            name: 'name',
+            title: 'Name',
+            type: 'string',
+            description: 'e.g. "The Daily"',
+            validation: (Rule) => Rule.required(),
+        },
+        {
+            name: 'slug',
+            title: 'ID',
+            type: 'slug',
+            description: 'Auto-generated. Used internally — do not change after orders start coming in.',
+            options: { source: 'name', maxLength: 40 },
+            validation: (Rule) => Rule.required(),
+        },
+        {
+            name: 'size',
+            title: 'Size',
+            type: 'string',
+            description: 'e.g. "24 oz"',
+            validation: (Rule) => Rule.required(),
+        },
+        {
+            name: 'price',
+            title: 'Price (USD)',
+            type: 'number',
+            validation: (Rule) => Rule.required().min(0),
+        },
+        {
+            name: 'description',
+            title: 'Description',
+            type: 'text',
+            rows: 4,
+        },
+        {
+            name: 'colors',
+            title: 'Base Palette Options',
+            type: 'array',
+            of: [{ type: 'string' }],
+            description: 'One per line. e.g. Sage Wash, Dusty Rose',
+            options: { layout: 'tags' },
+            validation: (Rule) => Rule.min(1),
+        },
+        {
+            name: 'image',
+            title: 'Photo',
+            type: 'image',
+            options: { hotspot: true },
+            description: 'Drag the crop circle to set the focal point.',
+        },
+        {
+            name: 'order',
+            title: 'Display Order',
+            type: 'number',
+            description: 'Lower numbers appear first.',
+            initialValue: 0,
+        },
+    ],
+    orderings: [
+        { title: 'Display Order', name: 'orderAsc', by: [{ field: 'order', direction: 'asc' }] },
+    ],
+    preview: {
+        select: { title: 'name', subtitle: 'size', media: 'image' },
+    },
+};
