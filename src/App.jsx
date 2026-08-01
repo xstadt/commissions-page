@@ -1,103 +1,43 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import logo from "./logo.png";
 import { client, urlFor } from "./sanityClient";
+import { Footer } from "./shared";
+import { SKELETON_CSS, validateEmail, FORMSPREE_ENDPOINT } from "./lib";
+import StorePage from "./StorePage";
+import OrderSuccess from "./OrderSuccess";
 
 /*
  * ========================================
- * VISUAL FREQUENCIES STUDIOS — V8 (Sanity)
+ * VISUAL FREQUENCIES STUDIOS — V9
  * ========================================
  *
- * CHANGES FROM V7:
- * - Products, gallery items, and site settings now load from Sanity CMS
- * - Local image imports removed (portrait / family / studio come from Sanity)
- * - Real photos render on product cards, modal, cart thumbs, gallery, lightbox
- * - Loading skeletons + empty states for both grids
- * - Commission status, About copy, stats, and footer links are editable in Studio
+ * CHANGES FROM V8:
+ * - The shop is no longer bottles-only. Products carry a category,
+ *   optional size/materials, extra photos, and a compare-at price,
+ *   all managed in Sanity.
+ * - Store moved to StorePage.jsx and grew search, category filters,
+ *   and sorting.
+ * - Products can be set to "Ask me first" in Sanity, which holds the
+ *   customer's card instead of charging it until the artist approves.
+ * - The old success toast is now a real confirmation page
+ *   (OrderSuccess.jsx) that reads the actual order back from Stripe.
+ * - Shared helpers live in shared.jsx so every page uses the same ones.
  *
  * NOTE: sanityClient.js must exist at src/sanityClient.js
  */
 
-// Formspree endpoint — handles both commissions and bottle orders.
-// A hidden form_type field tells them apart in your inbox.
-const FORMSPREE_ENDPOINT = "https://formspree.io/f/mgodnbvr";
-
 // ==========================================
 // GROQ QUERIES
+// (product queries live in StorePage.jsx)
 // ==========================================
-const PRODUCTS_QUERY = `*[_type == "product"] | order(order asc) {
-  "id": slug.current,
-  name, size, price, description, colors, image
-}`;
-
 const GALLERY_QUERY = `*[_type == "galleryItem"] | order(order asc) {
   "id": _id, title, category, medium, year, image
 }`;
 
 const SETTINGS_QUERY = `*[_type == "siteSettings"][0]{
-  commissionStatus, portrait, aboutIntro, stats, story, approach,
+  commissionStatus, storeIntro, portrait, aboutIntro, stats, story, approach,
   studioPhotos, instagramUrl, tiktokUrl, contactEmail
 }`;
-
-// ==========================================
-// HELPERS
-// ==========================================
-
-function Toast({ message, onDone }) {
-  useEffect(() => {
-    const t = setTimeout(onDone, 2200);
-    return () => clearTimeout(t);
-  }, [onDone]);
-  return (
-    <div style={{
-      position: "fixed", bottom: 88, left: "50%", transform: "translateX(-50%)",
-          background: "var(--surface)", border: "1px solid var(--border)",
-          borderRadius: 99, padding: "10px 22px", fontSize: 13, fontWeight: 600,
-          color: "var(--sage)", zIndex: 999, animation: "toastIn 0.25s ease",
-          whiteSpace: "nowrap", boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
-          fontFamily: "'Inter', sans-serif",
-    }}>{message}</div>
-  );
-}
-
-function validateEmail(email) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
-function Footer({ settings }) {
-  const links = [
-    { label: "Instagram", href: settings?.instagramUrl },
-    { label: "TikTok", href: settings?.tiktokUrl },
-    { label: "Email", href: settings?.contactEmail ? `mailto:${settings.contactEmail}` : null },
-  ].filter((l) => l.href);
-
-  return (
-    <footer style={{ borderTop: "1px solid var(--border)", marginTop: 64, paddingTop: 32, paddingBottom: 24, textAlign: "center" }}>
-    {links.length > 0 && (
-      <div style={{ display: "flex", justifyContent: "center", gap: 24, marginBottom: 16, flexWrap: "wrap" }}>
-      {links.map(({ label, href }) => (
-        <a key={label} href={href} target="_blank" rel="noreferrer"
-        style={{ color: "var(--text-dim)", fontSize: 13, fontWeight: 500, textDecoration: "none", transition: "color 0.15s" }}
-        onMouseEnter={(e) => (e.target.style.color = "var(--text)")}
-        onMouseLeave={(e) => (e.target.style.color = "var(--text-dim)")}>{label}</a>
-      ))}
-      </div>
-    )}
-    <div style={{ fontSize: 12, color: "#5a5047", fontWeight: 300 }}>
-    © {new Date().getFullYear()} Visual Frequencies Studios · All pieces are original handpainted works
-    </div>
-    </footer>
-  );
-}
-
-// Shared skeleton styles, injected once at App level
-const SKELETON_CSS = `
-.skel-shimmer {
-  background: var(--border);
-  animation: skelPulse 1.5s ease-in-out infinite;
-}
-.skel-line { height: 12px; border-radius: 6px; }
-@keyframes skelPulse { 0%,100% { opacity: 0.35; } 50% { opacity: 0.65; } }
-`;
 
 // ==========================================
 // PAGE: COMMISSIONS
@@ -240,805 +180,6 @@ function CommissionsPage({ settings }) {
   );
 }
 
-
-// ==========================================
-// PAGE: WATER BOTTLES
-// ==========================================
-
-function WaterBottlePage({ settings }) {
-  const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(false);
-
-  const [cart, setCart] = useState([]);
-  const [selectedProduct, setSelectedProduct] = useState(null);
-  const [cartOpen, setCartOpen] = useState(false);
-  const [checkingOut, setCheckingOut] = useState(false);
-  const [orderSent, setOrderSent] = useState(false);
-  const [checkoutForm, setCheckoutForm] = useState({ name: "", email: "", notes: "" });
-  const [checkoutErrors, setCheckoutErrors] = useState({});
-  const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
-  const [checkoutSubmitError, setCheckoutSubmitError] = useState(null);
-  const [toast, setToast] = useState(null);
-  const [quickCounts, setQuickCounts] = useState({});
-  const [pendingQuickAdd, setPendingQuickAdd] = useState(null);
-  const [mobileActiveCard, setMobileActiveCard] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    client.fetch(PRODUCTS_QUERY)
-    .then((data) => {
-      if (cancelled) return;
-      setProducts(Array.isArray(data) ? data : []);
-      setLoading(false);
-    })
-    .catch((err) => {
-      if (cancelled) return;
-      console.error("Sanity products fetch failed:", err);
-      setLoadError(true);
-      setLoading(false);
-    });
-    return () => { cancelled = true; };
-  }, []);
-
-  const showToast = useCallback((msg) => {
-    setToast(null);
-    setTimeout(() => setToast(msg), 30);
-  }, []);
-
-  const addToCart = (product, color, note, qty = 1) => {
-    const item = {
-      ...product, cartId: Date.now() + Math.random(),
-      selectedColor: color, customNote: note, qty,
-    };
-    setCart((prev) => [...prev, item]);
-    setSelectedProduct(null);
-    showToast(`${product.name} × ${qty} added`);
-  };
-
-  const removeFromCart = (cartId) => setCart((prev) => prev.filter((i) => i.cartId !== cartId));
-
-  const updateCartQty = (cartId, delta) => {
-    setCart((prev) => prev.map((item) => {
-      if (item.cartId !== cartId) return item;
-      const newQty = item.qty + delta;
-      return newQty < 1 ? item : { ...item, qty: newQty };
-    }));
-  };
-
-  const cartCount = cart.reduce((sum, i) => sum + i.qty, 0);
-  const cartTotal = cart.reduce((sum, i) => sum + i.price * i.qty, 0);
-
-  const getCartSummary = (productId) => {
-    const items = cart.filter((i) => i.id === productId);
-    if (items.length === 0) return null;
-    const totalQty = items.reduce((sum, i) => sum + i.qty, 0);
-    const byColor = {};
-    items.forEach((i) => {
-      byColor[i.selectedColor] = (byColor[i.selectedColor] || 0) + i.qty;
-    });
-    return { totalQty, byColor, items };
-  };
-
-  const quickIncrement = (productId) => {
-    setQuickCounts((prev) => ({ ...prev, [productId]: (prev[productId] || 0) + 1 }));
-  };
-  const quickDecrement = (productId) => {
-    setQuickCounts((prev) => {
-      const val = (prev[productId] || 0) - 1;
-      if (val <= 0) { const copy = { ...prev }; delete copy[productId]; return copy; }
-      return { ...prev, [productId]: val };
-    });
-  };
-  const quickAddToCart = (product) => {
-    const qty = quickCounts[product.id] || 1;
-    setPendingQuickAdd({ product, qty });
-  };
-  const finalizePendingAdd = (color, note) => {
-    if (!pendingQuickAdd) return;
-    addToCart(pendingQuickAdd.product, color, note, pendingQuickAdd.qty);
-    setQuickCounts((prev) => { const copy = { ...prev }; delete copy[pendingQuickAdd.product.id]; return copy; });
-    setPendingQuickAdd(null);
-    setCartOpen(true);
-  };
-
-  const handleCheckout = async () => {
-    const errs = {};
-    if (!checkoutForm.name.trim()) errs.name = "Required";
-    if (!checkoutForm.email.trim()) errs.email = "Required";
-    else if (!validateEmail(checkoutForm.email)) errs.email = "Invalid email";
-    if (Object.keys(errs).length > 0) { setCheckoutErrors(errs); return; }
-
-    setCheckoutSubmitting(true);
-    setCheckoutSubmitError(null);
-
-    const cartSummary = cart.map((item) =>
-    `• ${item.name} (${item.size}) × ${item.qty} — ${item.selectedColor}${item.customNote ? ` — "${item.customNote}"` : ""} — $${item.price * item.qty}`
-    ).join("\n");
-
-    try {
-      const res = await fetch(FORMSPREE_ENDPOINT, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Accept": "application/json" },
-        body: JSON.stringify({
-          form_type: "Bottle Order Request",
-            name: checkoutForm.name,
-            email: checkoutForm.email,
-            order_total: `$${cartTotal}`,
-            order_summary: cartSummary,
-            notes: checkoutForm.notes || "None",
-        }),
-      });
-      if (res.ok) {
-        setOrderSent(true);
-      } else {
-        setCheckoutSubmitError("Something went wrong. Please try again.");
-      }
-    } catch {
-      setCheckoutSubmitError("Network error — check your connection and try again.");
-    } finally {
-      setCheckoutSubmitting(false);
-    }
-  };
-
-  const handlePageClick = () => { if (mobileActiveCard) setMobileActiveCard(null); };
-
-  return (
-    <div onClick={handlePageClick}>
-    <style>{`
-      .shop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
-      @media (max-width: 480px) { .shop-grid { grid-template-columns: 1fr; } }
-
-      .product-card {
-        background: var(--surface); border: 1px solid var(--border);
-        border-radius: 16px; overflow: hidden; cursor: pointer;
-        transition: all 0.25s ease; position: relative;
-      }
-      .product-card:hover { border-color: var(--text-dim); transform: translateY(-2px); }
-      .product-card.is-skeleton { pointer-events: none; }
-      .product-card.is-skeleton:hover { transform: none; border-color: var(--border); }
-      .product-img-wrap {
-        width: 100%; aspect-ratio: 1/1; position: relative; overflow: hidden;
-        background: linear-gradient(145deg, #1e1b17, #141210);
-      }
-      .product-img-wrap::after {
-        content: ''; position: absolute; inset: 0;
-        background: linear-gradient(135deg, rgba(143,173,139,0.06) 0%, rgba(184,165,204,0.06) 50%, rgba(212,160,160,0.06) 100%);
-        pointer-events: none;
-      }
-      .product-img-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
-      .product-img-emoji {
-        width: 100%; height: 100%; display: flex;
-        align-items: center; justify-content: center;
-        font-size: 40px; color: var(--border);
-      }
-      .product-info { padding: 16px; }
-      .product-name { font-weight: 700; font-size: 15px; margin-bottom: 2px; }
-      .product-meta { display: flex; justify-content: space-between; align-items: center; }
-      .product-size { font-size: 13px; color: var(--text-dim); }
-      .product-price { font-size: 15px; font-weight: 700; color: var(--sage); }
-
-      .in-cart-badge {
-        position: absolute; top: 12px; left: 12px; z-index: 6;
-        display: flex; flex-direction: column; gap: 4px;
-      }
-      .in-cart-pill {
-        display: inline-flex; align-items: center; gap: 5px;
-        padding: 4px 10px; border-radius: 8px;
-        background: rgba(14,13,11,0.8); backdrop-filter: blur(8px);
-        border: 1px solid rgba(143,173,139,0.3);
-        font-size: 11px; font-weight: 600; color: var(--sage);
-        font-family: 'Inter', sans-serif; white-space: nowrap;
-      }
-      .in-cart-dot {
-        width: 6px; height: 6px; border-radius: 50%;
-        background: var(--sage); flex-shrink: 0;
-      }
-
-      .qa-wrap {
-        position: absolute; bottom: 12px; right: 12px; z-index: 5;
-        display: flex; align-items: center; gap: 6px;
-        opacity: 0; transition: opacity 0.2s ease;
-        pointer-events: none;
-      }
-      .product-card:hover .qa-wrap { opacity: 1; pointer-events: auto; }
-      .qa-wrap.mobile-visible { opacity: 1; pointer-events: auto; }
-
-      .qa-btn {
-        width: 38px; height: 38px; border-radius: 10px;
-        background: rgba(14,13,11,0.85); backdrop-filter: blur(8px);
-        border: 1px solid var(--border); color: var(--text-dim);
-        font-size: 18px; cursor: pointer; display: flex;
-        align-items: center; justify-content: center;
-        transition: all 0.15s; font-family: 'Inter', sans-serif; font-weight: 600;
-      }
-      .qa-btn:hover { border-color: var(--sage); color: var(--text); }
-      .qa-count {
-        min-width: 24px; text-align: center; font-size: 15px;
-        font-weight: 700; color: var(--text); font-family: 'Inter', sans-serif;
-        text-shadow: 0 1px 4px rgba(0,0,0,0.6);
-      }
-      .qa-cart-btn {
-        height: 38px; padding: 0 16px; border-radius: 10px;
-        background: var(--sage); border: none; color: var(--bg);
-        font-size: 12px; font-weight: 700; cursor: pointer;
-        display: flex; align-items: center; gap: 5px;
-        font-family: 'Inter', sans-serif; letter-spacing: 0.5px;
-        transition: all 0.15s;
-      }
-      .qa-cart-btn:hover { filter: brightness(1.1); }
-
-      .mobile-add-btn {
-        display: none; position: absolute; bottom: 12px; right: 12px; z-index: 5;
-        width: 38px; height: 38px; border-radius: 10px;
-        background: rgba(14,13,11,0.85); backdrop-filter: blur(8px);
-        border: 1px solid var(--border); color: var(--text-dim);
-        font-size: 20px; cursor: pointer; align-items: center;
-        justify-content: center; font-family: 'Inter', sans-serif;
-        font-weight: 600; transition: all 0.15s;
-      }
-      @media (hover: none) {
-        .mobile-add-btn { display: flex; }
-        .qa-wrap { opacity: 0; pointer-events: none; }
-        .qa-wrap.mobile-visible { opacity: 1; pointer-events: auto; }
-      }
-
-      .cart-fab {
-        position: fixed; bottom: 24px; right: 24px; width: 56px; height: 56px;
-        border-radius: 16px; background: #0e0d0b;
-        border: 1px solid rgba(255,255,255,0.1); cursor: pointer;
-        display: flex; align-items: center; justify-content: center;
-        font-size: 22px; color: var(--text); box-shadow: 0 4px 24px rgba(0,0,0,0.6);
-        z-index: 100; transition: transform 0.2s, filter 0.2s;
-      }
-      .cart-fab:hover { transform: scale(1.06); filter: brightness(1.3); }
-      .cart-badge {
-        position: absolute; top: -4px; right: -4px; min-width: 22px; height: 22px;
-        border-radius: 99px; padding: 0 5px; background: var(--dusty-rose); color: white;
-        font-size: 11px; font-weight: 700; display: flex; align-items: center;
-        justify-content: center; font-family: 'Inter', sans-serif;
-      }
-
-      .overlay {
-        position: fixed; inset: 0; background: rgba(0,0,0,0.7);
-        backdrop-filter: blur(4px); z-index: 200;
-        display: flex; align-items: center; justify-content: center;
-        animation: overlayIn 0.2s ease;
-      }
-      @keyframes overlayIn { from { opacity: 0; } to { opacity: 1; } }
-
-      .product-modal {
-        background: var(--surface); border: 1px solid var(--border);
-        border-radius: 20px; width: 90%; max-width: 480px;
-        max-height: 90vh; overflow-y: auto; animation: modalSlideUp 0.3s ease;
-        scrollbar-width: thin; scrollbar-color: var(--border) transparent;
-      }
-      @keyframes modalSlideUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
-      .modal-img-placeholder {
-        width: 100%; aspect-ratio: 4/3;
-        background: linear-gradient(145deg, #1e1b17, #141210);
-        display: flex; align-items: center; justify-content: center;
-        color: var(--border); font-size: 56px; border-radius: 20px 20px 0 0;
-        position: relative; overflow: hidden;
-      }
-      .modal-img-placeholder::after {
-        content: ''; position: absolute; inset: 0;
-        background: linear-gradient(135deg, rgba(143,173,139,0.08) 0%, rgba(184,165,204,0.08) 50%, rgba(212,160,160,0.08) 100%);
-        pointer-events: none;
-      }
-      .modal-img-placeholder img {
-        width: 100%; height: 100%; object-fit: cover; display: block;
-        border-radius: 20px 20px 0 0;
-      }
-      .modal-body { padding: 24px; }
-      .modal-close {
-        position: absolute; top: 16px; right: 16px; width: 36px; height: 36px;
-        border-radius: 10px; background: rgba(0,0,0,0.5); backdrop-filter: blur(8px);
-        border: 1px solid rgba(255,255,255,0.1); color: var(--text);
-        font-size: 18px; cursor: pointer; display: flex; align-items: center;
-        justify-content: center; z-index: 10; transition: border-color 0.15s;
-      }
-      .modal-close:hover { border-color: rgba(255,255,255,0.3); }
-      .modal-title { font-size: 24px; font-weight: 800; margin-bottom: 4px; }
-      .modal-size-price { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-      .modal-size { font-size: 14px; color: var(--text-dim); }
-      .modal-price { font-size: 20px; font-weight: 800; color: var(--sage); }
-      .modal-desc { font-size: 14px; line-height: 1.7; color: var(--text-dim); font-weight: 300; margin-bottom: 24px; }
-      .modal-section-label { font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 10px; }
-      .color-options { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
-      .color-chip {
-        padding: 8px 16px; border-radius: 99px; font-size: 13px; font-weight: 500;
-        border: 1.5px solid var(--border); background: transparent; color: var(--text-dim);
-        cursor: pointer; transition: all 0.15s; font-family: 'Inter', sans-serif;
-      }
-      .color-chip:hover { border-color: var(--text-dim); }
-      .color-chip.selected { border-color: var(--sage); color: var(--text); background: rgba(143,173,139,0.1); }
-      .modal-note-input {
-        width: 100%; background: var(--bg); border: 1.5px solid var(--border);
-        border-radius: 12px; padding: 12px 14px; color: var(--text);
-        font-family: 'Inter', sans-serif; font-size: 14px; outline: none;
-        min-height: 80px; resize: vertical; margin-bottom: 20px;
-      }
-      .modal-note-input:focus { border-color: var(--sage); }
-      .modal-note-input::placeholder { color: #5a5047; }
-
-      .qty-control {
-        display: flex; align-items: center; gap: 2px;
-        background: var(--bg); border: 1.5px solid var(--border);
-        border-radius: 12px; padding: 4px; width: fit-content;
-      }
-      .qty-btn {
-        width: 32px; height: 32px; border-radius: 8px; border: none;
-        background: transparent; color: var(--text-dim); font-size: 16px;
-        cursor: pointer; display: flex; align-items: center; justify-content: center;
-        font-family: 'Inter', sans-serif; font-weight: 600; transition: color 0.15s;
-      }
-      .qty-btn:hover { color: var(--text); }
-      .qty-value {
-        min-width: 32px; text-align: center; font-size: 15px;
-        font-weight: 700; color: var(--text); font-family: 'Inter', sans-serif;
-      }
-
-      .add-to-cart-btn, .submit-btn, .checkout-btn {
-        transition: filter 0.2s ease, transform 0.15s ease;
-      }
-      .add-to-cart-btn:not(:disabled):hover,
-          .submit-btn:hover,
-          .checkout-btn:hover {
-            filter: brightness(1.1);
-            transform: translateY(-1px);
-          }
-          .add-to-cart-btn:not(:disabled):active,
-          .submit-btn:active,
-          .checkout-btn:active {
-            transform: translateY(0);
-          }
-          .add-to-cart-btn {
-            width: 100%; padding: 16px; border: none; border-radius: 99px;
-            font-family: 'Inter', sans-serif; font-weight: 700; font-size: 15px;
-            color: var(--bg); background: linear-gradient(135deg, var(--sage), var(--soft-teal));
-            cursor: pointer; letter-spacing: 1px; text-transform: uppercase;
-          }
-          .add-to-cart-btn:disabled { opacity: 0.4; cursor: not-allowed; filter: none; transform: none; }
-
-          .cart-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 250; }
-          .cart-drawer {
-            position: fixed; top: 0; right: 0; width: 380px; max-width: 92vw;
-            height: 100vh; background: var(--surface); border-left: 1px solid var(--border);
-            z-index: 300; display: flex; flex-direction: column; animation: drawerSlide 0.3s ease;
-          }
-          @keyframes drawerSlide { from { transform: translateX(100%); } to { transform: translateX(0); } }
-          .cart-header {
-            padding: 24px; border-bottom: 1px solid var(--border);
-            display: flex; justify-content: space-between; align-items: center;
-          }
-          .cart-header-title { font-size: 18px; font-weight: 700; }
-          .cart-close {
-            background: none; border: none; color: var(--text-dim);
-            font-size: 24px; cursor: pointer; transition: color 0.15s;
-          }
-          .cart-close:hover { color: var(--text); }
-          .cart-items { flex: 1; overflow-y: auto; padding: 16px 24px; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
-          .cart-empty { text-align: center; padding: 48px 20px; color: var(--text-dim); font-size: 14px; font-weight: 300; }
-          .cart-item { display: flex; gap: 14px; padding: 16px 0; border-bottom: 1px solid var(--border); align-items: flex-start; }
-          .cart-item:last-child { border-bottom: none; }
-          .cart-item-thumb {
-            width: 56px; height: 56px; border-radius: 10px;
-            background: linear-gradient(145deg, #1e1b17, #141210); flex-shrink: 0;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 20px; color: var(--border); overflow: hidden;
-          }
-          .cart-item-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-          .cart-item-info { flex: 1; min-width: 0; }
-          .cart-item-name { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
-          .cart-item-detail { font-size: 12px; color: var(--text-dim); font-weight: 300; }
-          .cart-item-note { font-size: 11px; color: var(--text-dim); font-style: italic; margin-top: 4px; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-          .cart-item-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; }
-          .cart-item-price { font-weight: 700; font-size: 14px; color: var(--sage); }
-          .cart-remove { background: none; border: none; color: var(--text-dim); font-size: 18px; cursor: pointer; padding: 2px; line-height: 1; opacity: 0.5; transition: opacity 0.15s, color 0.15s; }
-          .cart-remove:hover { opacity: 1; color: var(--dusty-rose); }
-          .cart-qty { display: flex; align-items: center; gap: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-top: 8px; width: fit-content; }
-          .cart-qty-btn {
-            width: 26px; height: 24px; border: none; background: transparent;
-            color: var(--text-dim); font-size: 14px; cursor: pointer;
-            display: flex; align-items: center; justify-content: center;
-            font-family: 'Inter', sans-serif; font-weight: 600; transition: color 0.15s;
-          }
-          .cart-qty-btn:hover { color: var(--text); }
-          .cart-qty-val { min-width: 20px; text-align: center; font-size: 12px; font-weight: 700; color: var(--text); }
-          .cart-footer { padding: 20px 24px; border-top: 1px solid var(--border); }
-          .cart-total { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-          .cart-total-label { font-size: 14px; color: var(--text-dim); font-weight: 500; }
-          .cart-total-price { font-size: 22px; font-weight: 800; }
-          .checkout-btn {
-            width: 100%; padding: 16px; border: none; border-radius: 99px;
-            font-family: 'Inter', sans-serif; font-weight: 700; font-size: 15px;
-            color: var(--bg); background: linear-gradient(135deg, var(--sage), var(--soft-teal), var(--lavender));
-            cursor: pointer; letter-spacing: 1px; text-transform: uppercase;
-          }
-          .keep-shopping-btn {
-            width: 100%; padding: 12px; border: 1.5px solid var(--border);
-            border-radius: 99px; background: transparent; color: var(--text-dim);
-            font-family: 'Inter', sans-serif; font-weight: 600; font-size: 13px;
-            cursor: pointer; margin-top: 8px; transition: all 0.15s;
-          }
-          .keep-shopping-btn:hover { border-color: var(--text-dim); color: var(--text); }
-
-          .checkout-modal {
-            background: var(--surface); border: 1px solid var(--border);
-            border-radius: 20px; width: 90%; max-width: 440px;
-            padding: 32px 24px; animation: modalSlideUp 0.3s ease;
-            max-height: 90vh; overflow-y: auto;
-          }
-          .checkout-title { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
-          .checkout-subtitle { font-size: 14px; color: var(--text-dim); font-weight: 300; margin-bottom: 24px; }
-          .checkout-summary { background: var(--bg); border-radius: 12px; padding: 16px; margin-bottom: 20px; }
-          .checkout-summary-item { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-dim); padding: 4px 0; }
-          .checkout-summary-total {
-            display: flex; justify-content: space-between; font-size: 15px;
-            font-weight: 700; color: var(--text); padding-top: 10px; margin-top: 8px;
-            border-top: 1px solid var(--border);
-          }
-          .order-success {
-            text-align: center; padding: 32px 24px; background: var(--surface);
-            border: 1px solid var(--border); border-radius: 20px;
-            max-width: 440px; width: 90%; animation: modalSlideUp 0.3s ease;
-          }
-
-          .quick-prompt {
-            background: var(--surface); border: 1px solid var(--border);
-            border-radius: 20px; width: 90%; max-width: 420px;
-            padding: 28px 24px; animation: modalSlideUp 0.3s ease;
-            max-height: 90vh; overflow-y: auto;
-          }
-          .quick-prompt-title { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
-          .quick-prompt-sub { font-size: 13px; color: var(--text-dim); font-weight: 300; margin-bottom: 20px; }
-
-          @keyframes toastIn {
-            0% { opacity: 0; transform: translateX(-50%) translateY(8px); }
-            100% { opacity: 1; transform: translateX(-50%) translateY(0); }
-          }
-          `}</style>
-
-          <div className="hero">
-          <h1 className="hero-title">Custom<br /><span className="flow">Water Bottles</span></h1>
-          <p className="hero-sub">
-          Handpainted, one-of-a-kind bottles with the same psychedelic mixed media
-          style. Pick your size, tell us the vibe, and we'll make it yours.
-          </p>
-          </div>
-
-          <section>
-          <div className="section-label" style={{ color: "var(--soft-teal)" }}>~ choose your bottle</div>
-
-          {loading ? (
-            <div className="shop-grid">
-            {[1, 2, 3, 4].map((i) => (
-              <div className="product-card is-skeleton" key={i}>
-              <div className="product-img-wrap skel-shimmer" />
-              <div className="product-info">
-              <div className="skel-line skel-shimmer" style={{ width: "60%" }} />
-              <div className="skel-line skel-shimmer" style={{ width: "35%", marginTop: 10 }} />
-              </div>
-              </div>
-            ))}
-            </div>
-          ) : loadError ? (
-            <div className="card">
-            <p>Couldn't load the shop right now. Please refresh, or reach out through the Commissions page.</p>
-            </div>
-          ) : products.length === 0 ? (
-            <div className="card">
-            <p>New bottles coming soon. Check back shortly.</p>
-            </div>
-          ) : (
-            <div className="shop-grid">
-            {products.map((product) => {
-              const summary = getCartSummary(product.id);
-              const qc = quickCounts[product.id] || 0;
-              const isMobileActive = mobileActiveCard === product.id;
-
-              return (
-                <div className="product-card" key={product.id}>
-                <div className="product-img-wrap" onClick={() => setSelectedProduct(product)}>
-                {product.image ? (
-                  <img
-                  src={urlFor(product.image).width(600).height(600).quality(75).auto("format").url()}
-                  alt={product.name}
-                  loading="lazy"
-                  />
-                ) : (
-                  <div className="product-img-emoji">🫗</div>
-                )}
-
-                {summary && (
-                  <div className="in-cart-badge">
-                  {Object.entries(summary.byColor).map(([color, qty]) => (
-                    <span className="in-cart-pill" key={color}>
-                    <span className="in-cart-dot" />
-                    {qty} × {color}
-                    </span>
-                  ))}
-                  </div>
-                )}
-
-                <button
-                className="mobile-add-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (isMobileActive) {
-                    setMobileActiveCard(null);
-                  } else {
-                    setMobileActiveCard(product.id);
-                    if (qc === 0) quickIncrement(product.id);
-                  }
-                }}
-                >+</button>
-
-                <div className={`qa-wrap ${isMobileActive ? "mobile-visible" : ""}`}>
-                {qc > 0 && (
-                  <button className="qa-btn" onClick={(e) => { e.stopPropagation(); quickDecrement(product.id); }}>−</button>
-                )}
-                {qc > 0 && <span className="qa-count">{qc}</span>}
-                <button className="qa-btn" onClick={(e) => { e.stopPropagation(); quickIncrement(product.id); }}>+</button>
-                {qc > 0 && (
-                  <button className="qa-cart-btn" onClick={(e) => { e.stopPropagation(); quickAddToCart(product); }}>
-                  🛒 Add
-                  </button>
-                )}
-                </div>
-                </div>
-
-                <div className="product-info" onClick={() => setSelectedProduct(product)}>
-                <div className="product-name">{product.name}</div>
-                <div className="product-meta">
-                <span className="product-size">{product.size}</span>
-                <span className="product-price">${product.price}</span>
-                </div>
-                </div>
-                </div>
-              );
-            })}
-            </div>
-          )}
-          </section>
-
-          <section>
-          <div className="section-label" style={{ color: "var(--warm-gold)" }}>~ how it works</div>
-          <div className="card">
-          <p>
-          Add bottles to your cart, describe what you want on each one, and
-          submit your order. We'll follow up with a quote and timeline. Each
-          bottle is <strong>sealed and hand-finished</strong> so the art holds up to daily use.
-          </p>
-          </div>
-          </section>
-
-          <Footer settings={settings} />
-
-          {cartCount > 0 && (
-            <button className="cart-fab" onClick={() => setCartOpen(true)}>
-            🛒<span className="cart-badge">{cartCount}</span>
-            </button>
-          )}
-
-          {toast && <Toast message={toast} onDone={() => setToast(null)} />}
-
-          {selectedProduct && (
-            <ProductModal
-            product={selectedProduct}
-            onClose={() => setSelectedProduct(null)}
-            onAdd={(product, color, note, qty) => { addToCart(product, color, note, qty); setCartOpen(true); }}
-            />
-          )}
-
-          {pendingQuickAdd && (
-            <QuickAddPrompt
-            product={pendingQuickAdd.product}
-            qty={pendingQuickAdd.qty}
-            onClose={() => setPendingQuickAdd(null)}
-            onConfirm={finalizePendingAdd}
-            />
-          )}
-
-          {cartOpen && (
-            <>
-            <div className="cart-overlay" onClick={() => setCartOpen(false)} />
-            <div className="cart-drawer">
-            <div className="cart-header">
-            <span className="cart-header-title">Your Cart ({cartCount})</span>
-            <button className="cart-close" onClick={() => setCartOpen(false)}>✕</button>
-            </div>
-            <div className="cart-items">
-            {cart.length === 0 ? (
-              <div className="cart-empty">Your cart is empty.<br />Tap a bottle to get started.</div>
-            ) : cart.map((item) => (
-              <div className="cart-item" key={item.cartId}>
-              <div className="cart-item-thumb">
-              {item.image ? (
-                <img
-                src={urlFor(item.image).width(112).height(112).quality(70).auto("format").url()}
-                alt=""
-                />
-              ) : "🫗"}
-              </div>
-              <div className="cart-item-info">
-              <div className="cart-item-name">{item.name}</div>
-              <div className="cart-item-detail">{item.size} · {item.selectedColor}</div>
-              {item.customNote && <div className="cart-item-note">"{item.customNote}"</div>}
-              <div className="cart-qty">
-              <button className="cart-qty-btn" onClick={() => updateCartQty(item.cartId, -1)}>−</button>
-              <span className="cart-qty-val">{item.qty}</span>
-              <button className="cart-qty-btn" onClick={() => updateCartQty(item.cartId, 1)}>+</button>
-              </div>
-              </div>
-              <div className="cart-item-right">
-              <div className="cart-item-price">${item.price * item.qty}</div>
-              <button className="cart-remove" onClick={() => removeFromCart(item.cartId)}>×</button>
-              </div>
-              </div>
-            ))}
-            </div>
-            {cart.length > 0 && (
-              <div className="cart-footer">
-              <div className="cart-total">
-              <span className="cart-total-label">Total</span>
-              <span className="cart-total-price">${cartTotal}</span>
-              </div>
-              <button className="checkout-btn" onClick={() => { setCartOpen(false); setCheckingOut(true); }}>Continue to Checkout</button>
-              <button className="keep-shopping-btn" onClick={() => setCartOpen(false)}>Keep Shopping</button>
-              </div>
-            )}
-            </div>
-            </>
-          )}
-
-          {checkingOut && !orderSent && (
-            <div className="overlay" onClick={() => setCheckingOut(false)}>
-            <div className="checkout-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="checkout-title">Almost there</div>
-            <div className="checkout-subtitle">Tell us who you are and we'll send a quote.</div>
-            <div className="checkout-summary">
-            {cart.map((item) => (
-              <div className="checkout-summary-item" key={item.cartId}>
-              <span>{item.name} ({item.size}) × {item.qty}</span>
-              <span>${item.price * item.qty}</span>
-              </div>
-            ))}
-            <div className="checkout-summary-total"><span>Total</span><span>${cartTotal}</span></div>
-            </div>
-            <div className="field" style={{ marginBottom: 14 }}>
-            <label>Name {checkoutErrors.name && <span className="field-error">{checkoutErrors.name}</span>}</label>
-            <input className={checkoutErrors.name ? "input-error" : ""} placeholder="Your name" value={checkoutForm.name}
-            onChange={(e) => { setCheckoutForm({ ...checkoutForm, name: e.target.value }); setCheckoutErrors({ ...checkoutErrors, name: null }); }} />
-            </div>
-            <div className="field" style={{ marginBottom: 14 }}>
-            <label>Email {checkoutErrors.email && <span className="field-error">{checkoutErrors.email}</span>}</label>
-            <input className={checkoutErrors.email ? "input-error" : ""} type="email" placeholder="Where to reach you" value={checkoutForm.email}
-            onChange={(e) => { setCheckoutForm({ ...checkoutForm, email: e.target.value }); setCheckoutErrors({ ...checkoutErrors, email: null }); }} />
-            </div>
-            <div className="field" style={{ marginBottom: 20 }}>
-            <label>Anything else?</label>
-            <input placeholder="Optional — shipping notes, questions, etc." value={checkoutForm.notes}
-            onChange={(e) => setCheckoutForm({ ...checkoutForm, notes: e.target.value })} />
-            </div>
-            {checkoutSubmitError && (
-              <div style={{ color: "var(--dusty-rose)", fontSize: 13, marginBottom: 12, fontWeight: 500 }}>
-              {checkoutSubmitError}
-              </div>
-            )}
-            <button className="checkout-btn" onClick={handleCheckout}
-            disabled={checkoutSubmitting}
-            style={{ opacity: checkoutSubmitting ? 0.6 : 1, cursor: checkoutSubmitting ? "not-allowed" : "pointer" }}>
-            {checkoutSubmitting ? "Sending..." : "Submit Order Request"}
-            </button>
-            </div>
-            </div>
-          )}
-
-          {orderSent && (
-            <div className="overlay">
-            <div className="order-success">
-            <div className="success-icon">💧</div>
-            <div className="success-title">Order request received!</div>
-            <div className="success-msg">We'll review your bottles and follow up with a quote and timeline.<br />Keep an eye on your inbox.</div>
-            <button className="checkout-btn" style={{ marginTop: 24 }}
-            onClick={() => { setOrderSent(false); setCheckingOut(false); setCart([]); }}>Done</button>
-            </div>
-            </div>
-          )}
-          </div>
-  );
-}
-
-// ==========================================
-// PRODUCT MODAL
-// ==========================================
-function ProductModal({ product, onClose, onAdd }) {
-  const [selectedColor, setSelectedColor] = useState("");
-  const [note, setNote] = useState("");
-  const [qty, setQty] = useState(1);
-
-  const colors = product.colors || [];
-
-  return (
-    <div className="overlay" onClick={onClose}>
-    <div className="product-modal" onClick={(e) => e.stopPropagation()} style={{ position: "relative" }}>
-    <button className="modal-close" onClick={onClose}>✕</button>
-    <div className="modal-img-placeholder">
-    {product.image ? (
-      <img
-      src={urlFor(product.image).width(800).height(600).quality(80).auto("format").url()}
-      alt={product.name}
-      />
-    ) : "🫗"}
-    </div>
-    <div className="modal-body">
-    <div className="modal-title">{product.name}</div>
-    <div className="modal-size-price">
-    <span className="modal-size">{product.size}</span>
-    <span className="modal-price">${product.price * qty}</span>
-    </div>
-    {product.description && <div className="modal-desc">{product.description}</div>}
-    <div className="modal-section-label">Base Palette</div>
-    <div className="color-options">
-    {colors.map((c) => (
-      <button key={c} className={`color-chip ${selectedColor === c ? "selected" : ""}`}
-      onClick={() => setSelectedColor(c)}>{c}</button>
-    ))}
-    </div>
-    <div className="modal-section-label">Quantity</div>
-    <div className="qty-control" style={{ marginBottom: 20 }}>
-    <button className="qty-btn" onClick={() => setQty((q) => Math.max(1, q - 1))}>−</button>
-    <span className="qty-value">{qty}</span>
-    <button className="qty-btn" onClick={() => setQty((q) => q + 1)}>+</button>
-    </div>
-    <div className="modal-section-label">Describe Your Vision</div>
-    <textarea className="modal-note-input"
-    placeholder="Bands, colors, themes, vibes — whatever you're feeling."
-    value={note} onChange={(e) => setNote(e.target.value)} />
-    <button className="add-to-cart-btn" disabled={!selectedColor}
-    onClick={() => onAdd(product, selectedColor, note, qty)}>
-    {selectedColor ? `Add ${qty > 1 ? qty + " " : ""}to Cart — $${product.price * qty}` : "Select a Palette"}
-    </button>
-    </div>
-    </div>
-    </div>
-  );
-}
-
-// ==========================================
-// QUICK-ADD PROMPT
-// ==========================================
-function QuickAddPrompt({ product, qty, onClose, onConfirm }) {
-  const [color, setColor] = useState("");
-  const [note, setNote] = useState("");
-  const colors = product.colors || [];
-
-  return (
-    <div className="overlay" onClick={onClose}>
-    <div className="quick-prompt" onClick={(e) => e.stopPropagation()}>
-    <div className="quick-prompt-title">{product.name} × {qty}</div>
-    <div className="quick-prompt-sub">Just need a couple details before we add {qty > 1 ? "these" : "this"} to your cart.</div>
-    <div className="modal-section-label">Base Palette</div>
-    <div className="color-options">
-    {colors.map((c) => (
-      <button key={c} className={`color-chip ${color === c ? "selected" : ""}`}
-      onClick={() => setColor(c)}>{c}</button>
-    ))}
-    </div>
-    <div className="modal-section-label">Quick Description</div>
-    <textarea className="modal-note-input" style={{ minHeight: 60 }}
-    placeholder="Colors, bands, vibes — even a few words helps."
-    value={note} onChange={(e) => setNote(e.target.value)} />
-    <button className="add-to-cart-btn" disabled={!color}
-    onClick={() => onConfirm(color, note)}>
-    {color ? `Add to Cart — $${product.price * qty}` : "Select a Palette"}
-    </button>
-    </div>
-    </div>
-  );
-}
 
 // ==========================================
 // PAGE: GALLERY
@@ -1440,15 +581,14 @@ function AboutPage({ settings }) {
   );
 }
 
-
 // ==========================================
 // TABS
 // ==========================================
 const TABS = [
   { id: "gallery", label: "Gallery", component: GalleryPage },
-{ id: "bottles", label: "Store", component: WaterBottlePage },
-{ id: "commissions", label: "Commissions", component: CommissionsPage },
-{ id: "about", label: "About", component: AboutPage },
+  { id: "store", label: "Store", component: StorePage },
+  { id: "commissions", label: "Commissions", component: CommissionsPage },
+  { id: "about", label: "About", component: AboutPage },
 ];
 
 // ==========================================
@@ -1458,6 +598,19 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("gallery");
   const [scrolled, setScrolled] = useState(false);
   const [settings, setSettings] = useState(null);
+
+  // Stripe sends people back to "/?order=success&session_id=...".
+  // Read it once on mount, before the tabs render, so the confirmation
+  // page takes over the whole screen instead of flashing behind a modal.
+  // The URL is left alone until the customer dismisses it, because the
+  // session id is what the confirmation page looks the order up with.
+  const [orderResult, setOrderResult] = useState(() => {
+    if (typeof window === "undefined") return null;
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get("order");
+    if (result !== "success" && result !== "cancelled") return null;
+    return { result, sessionId: params.get("session_id") };
+  });
 
   const ActiveComponent = TABS.find((t) => t.id === activeTab)?.component || TABS[0].component;
 
@@ -1478,6 +631,16 @@ export default function App() {
 
   const switchTab = (tabId) => {
     setActiveTab(tabId);
+    setOrderResult(null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  // Leaving the confirmation page also scrubs the order params, so a
+  // refresh doesn't drop them back onto it.
+  const leaveOrderPage = (tabId) => {
+    window.history.replaceState({}, "", window.location.pathname);
+    setOrderResult(null);
+    setActiveTab(tabId === "gallery" ? "gallery" : "store");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -1642,13 +805,13 @@ export default function App() {
       <nav className={`topnav${scrolled ? " scrolled" : ""}`}>
       <div className="topnav-inner">
       <div className="topnav-logo">
-      {activeTab !== "gallery" && (
+      {(orderResult || activeTab !== "gallery") && (
         <img src={logo} alt="Visual Frequencies Studios" />
       )}
       </div>
       <div className="topnav-links">
       {TABS.map((tab) => (
-        <button key={tab.id} className={`nav-link${activeTab === tab.id ? " active" : ""}`}
+        <button key={tab.id} className={`nav-link${!orderResult && activeTab === tab.id ? " active" : ""}`}
         onClick={() => switchTab(tab.id)}>{tab.label}</button>
       ))}
       </div>
@@ -1659,7 +822,7 @@ export default function App() {
       <nav className="bottomnav">
       <div className="bottomnav-inner">
       {TABS.map((tab) => (
-        <button key={tab.id} className={`bottomnav-btn${activeTab === tab.id ? " active" : ""}`}
+        <button key={tab.id} className={`bottomnav-btn${!orderResult && activeTab === tab.id ? " active" : ""}`}
         onClick={() => switchTab(tab.id)}>
         {tab.id === "gallery" && (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -1667,9 +830,9 @@ export default function App() {
           <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
           </svg>
         )}
-        {tab.id === "bottles" && (
+        {tab.id === "store" && (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M12 2v4M8 6h8l1 3v9a2 2 0 01-2 2H7a2 2 0 01-2-2V9l1-3z"/><path d="M8 11h8"/>
+          <path d="M4 8h16l-1.2 11a2 2 0 01-2 1.8H7.2a2 2 0 01-2-1.8L4 8z"/><path d="M9 11V6.5a3 3 0 016 0V11"/>
           </svg>
         )}
         {tab.id === "commissions" && (
@@ -1688,9 +851,20 @@ export default function App() {
       </div>
       </nav>
 
-      <div className="tab-content" key={activeTab}>
-      <ActiveComponent settings={settings} />
-      </div>
+      {orderResult ? (
+        <div className="tab-content" key="order-result">
+        <OrderSuccess
+        result={orderResult.result}
+        sessionId={orderResult.sessionId}
+        settings={settings}
+        onDone={leaveOrderPage}
+        />
+        </div>
+      ) : (
+        <div className="tab-content" key={activeTab}>
+        <ActiveComponent settings={settings} />
+        </div>
+      )}
       </div>
   );
 }
