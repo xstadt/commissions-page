@@ -344,7 +344,7 @@ function GalleryPage({ settings }) {
       Visual Frequencies<br /><span className="flow">Studios</span>
       </h1>
       <p className="hero-sub" style={{ margin: "0 auto" }}>
-      Original handpainted mixed media art — one of a kind, every time.
+      Illustration, design, and ideas made visual. Original artwork for gig posters, album covers, merchandise, and limited edition prints
       </p>
       </div>
 
