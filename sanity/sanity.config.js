@@ -21,6 +21,8 @@ export default defineConfig({
         S.divider(),
              S.documentTypeListItem('product').title('Water Bottles'),
              S.documentTypeListItem('galleryItem').title('Gallery'),
+             S.divider(),
+             S.documentTypeListItem('conceptReview').title('Concept Reviews'),
       ]),
     }),
   ],

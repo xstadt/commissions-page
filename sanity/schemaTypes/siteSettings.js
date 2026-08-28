@@ -124,7 +124,24 @@ export default {
       title: "Contact Email",
       type: "string",
       group: "social",
-      description: "Used for the Email link in the footer.",
+      description:
+        "Used for the Email link in the footer, and on concept review pages.",
+    },
+    {
+      name: "artistName",
+      title: "Your Name",
+      type: "string",
+      group: "social",
+      description:
+        "Shown on concept review pages so clients know who to reply to.",
+    },
+    {
+      name: "contactPhone",
+      title: "Contact Phone",
+      type: "string",
+      group: "social",
+      description:
+        "Shown on concept review pages only \u2014 not on the public site.",
     },
   ],
   preview: {

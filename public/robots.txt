@@ -1,0 +1,7 @@
+# Visual Frequencies Studios
+
+User-agent: *
+Disallow: /concepts/
+Allow: /
+
+Sitemap: https://visualfrequenciesstudios.com/sitemap.xml
