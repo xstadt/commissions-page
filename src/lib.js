@@ -14,7 +14,7 @@ export const FORMSPREE_ENDPOINT = "https://formspree.io/f/mgodnbvr";
 // month in the store can't use up the allowance that client feedback
 // needs. Create a second form in Formspree and paste its endpoint here.
 // Until you do, feedback falls back to the main form above.
-export const CONCEPT_FORMSPREE_ENDPOINT = FORMSPREE_ENDPOINT;
+export const CONCEPT_FORMSPREE_ENDPOINT = "https://formspree.io/f/xjyvvdzp";
 
 export function validateEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
