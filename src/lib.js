@@ -25,6 +25,26 @@ export function money(cents) {
   return `$${((cents || 0) / 100).toFixed(2)}`;
 }
 
+// ---- Stock ----
+// A product with an editionSize is a run of matching pieces sold from
+// one listing; without one it's a one-of-one. api/_inventory.js holds
+// the server's copy of this math — keep the two in step.
+export function isEdition(p) {
+  return typeof p?.editionSize === "number" && p.editionSize >= 1;
+}
+
+// How many a shopper could still buy. One-of-ones are 1 or 0.
+// For editions, paid orders AND card holds both count as taken.
+export function editionRemaining(p) {
+  if (!isEdition(p)) return p?.sold ? 0 : 1;
+  if (p.sold) return 0;
+  const taken = (p.editionOrders || []).reduce(
+    (sum, o) => sum + (o.state === "pending" || o.state === "paid" ? o.qty || 0 : 0),
+    0
+  );
+  return Math.max(0, p.editionSize - taken);
+}
+
 // Loading placeholders, injected once at App level.
 export const SKELETON_CSS = `
 .skel-shimmer {

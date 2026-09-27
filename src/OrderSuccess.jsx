@@ -166,7 +166,7 @@ export default function OrderSuccess({ result, sessionId, settings, onDone }) {
       ? [
           {
             t: "The artist reviews it",
-            d: "This piece is set aside for you in the meantime — nobody else can buy it.",
+            d: "Your order is set aside in the meantime — nobody else can buy it out from under you.",
           },
           {
             t: "You get an answer within a week",
@@ -240,7 +240,10 @@ export default function OrderSuccess({ result, sessionId, settings, onDone }) {
                   "🎨"
                 )}
               </div>
-              <div className="confirm-line-name">{item.name}</div>
+              <div className="confirm-line-name">
+                {item.name}
+                {item.qty > 1 && <span className="confirm-line-qty"> ×{item.qty}</span>}
+              </div>
               <div className="confirm-line-amount">{money(item.amount)}</div>
             </div>
           ))}
@@ -416,6 +419,7 @@ const CONFIRM_CSS = `
 }
 .confirm-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .confirm-line-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; line-height: 1.4; }
+.confirm-line-qty { color: var(--text-dim); font-weight: 500; }
 .confirm-line-amount { font-size: 14px; font-weight: 700; color: var(--sage); flex-shrink: 0; }
 
 .confirm-totals { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 14px; }

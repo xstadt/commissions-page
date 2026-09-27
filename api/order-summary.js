@@ -57,6 +57,7 @@ export async function GET(request) {
     const items = (session.line_items?.data || []).map((li) => ({
       name: li.price?.product?.name || li.description || "Item",
       slug: li.price?.product?.metadata?.sanity_slug || null,
+      qty: li.quantity || 1,
       amount: li.amount_total ?? 0,
     }));
 

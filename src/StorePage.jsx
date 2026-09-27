@@ -1,20 +1,29 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { client, urlFor } from "./sanityClient";
 import { Footer, Toast } from "./shared";
-import { validateEmail } from "./lib";
+import { validateEmail, isEdition, editionRemaining } from "./lib";
 
 /*
  * ========================================
  * THE STORE
  * ========================================
  *
- * Everything sold here is one-of-one, so there is no quantity
- * anywhere in this file — a piece is either in the cart or it isn't.
+ * Two kinds of product:
  *
- * Two things drive the whole page:
+ *   one-of-one  no editionSize in Sanity. A piece is either in the
+ *               cart or it isn't — quantity is always 1.
+ *
+ *   edition     editionSize set (15, 100, ...). One listing, many
+ *               matching copies. The shopper can pick how many, up to
+ *               what's left, and the cart line carries that quantity.
+ *
+ * Three things drive the whole page:
  *
  *   availabilityOf()  decides whether a piece reads as for sale,
  *                     on hold for someone else, or gone.
+ *
+ *   editionRemaining() how many copies of an edition are still for
+ *                     sale (paid orders and card holds both count).
  *
  *   paymentMode       comes from Sanity per product. "immediate"
  *                     charges at checkout; "approval" only puts a
@@ -27,6 +36,7 @@ const PRODUCTS_QUERY = `*[_type == "product"] | order(coalesce(order, 999) asc, 
   "id": slug.current,
   name, price, compareAtPrice, size, medium, description,
   image, gallery, sold, orderState, paymentMode, featured, _createdAt,
+  editionSize, editionOrders[]{ qty, state },
   "category": category->title,
   "categoryOrder": coalesce(category->order, 999)
 }`;
@@ -39,12 +49,32 @@ const SORTS = [
   { id: "name", label: "Name: A to Z" },
 ];
 
-// A piece with a card hold against it is still "sold" as far as the
-// shop is concerned — it must not be buyable twice — but the artist
-// hasn't been paid yet, so it gets its own label.
+// A one-of-one with a card hold against it is still "sold" as far as
+// the shop is concerned — it must not be buyable twice — but the
+// artist hasn't been paid yet, so it gets its own label.
+//
+// Editions don't get an "on hold" state: a hold just takes copies out
+// of the count, and the listing stays up while any are left.
 function availabilityOf(p) {
+  if (isEdition(p)) return editionRemaining(p) > 0 ? "available" : "sold";
   if (!p.sold) return "available";
   return p.orderState === "pending" ? "onhold" : "sold";
+}
+
+// Short stock line for editions, e.g. "12 of 15 left". Null for
+// one-of-ones.
+function stockLabel(p) {
+  if (!isEdition(p)) return null;
+  const left = editionRemaining(p);
+  if (left === 0) return `Edition of ${p.editionSize} · sold out`;
+  if (left <= 3) return `Only ${left} left`;
+  return `${left} of ${p.editionSize} left`;
+}
+
+// Whole-dollar prices print as-is; anything else gets cents, so
+// 3 × $24.99 reads $74.97 instead of a floating-point smear.
+function usd(n) {
+  return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
 
 function needsApproval(p) {
@@ -73,9 +103,10 @@ export default function StorePage({ settings }) {
       // Guard against a corrupted or outdated saved value - without this
       // a bad entry would crash the whole page on load.
       if (!Array.isArray(parsed)) return [];
-      return parsed.filter(
-        (i) => i && typeof i.id === "string" && typeof i.price === "number"
-      );
+      // Carts saved before editions existed have no qty — treat as 1.
+      return parsed
+        .filter((i) => i && typeof i.id === "string" && typeof i.price === "number")
+        .map((i) => ({ ...i, qty: Number.isInteger(i.qty) && i.qty > 0 ? i.qty : 1 }));
     } catch {
       return [];
     }
@@ -110,7 +141,8 @@ export default function StorePage({ settings }) {
         setLoading(false);
 
         // A saved cart can be hours or days old. Drop anything that has
-        // since sold, gone on hold, or been deleted, and re-sync prices
+        // since sold, gone on hold, or been deleted, trim edition
+        // quantities down to what's still left, and re-sync prices
         // from Sanity so the cart total always matches what Stripe will
         // actually charge.
         setCart((prev) => {
@@ -118,9 +150,14 @@ export default function StorePage({ settings }) {
           const live = Object.fromEntries(list.map((p) => [p.id, p]));
           const next = prev
             .filter((i) => live[i.id] && availabilityOf(live[i.id]) === "available")
-            .map((i) => ({ ...i, ...live[i.id], cartId: i.cartId }));
+            .map((i) => {
+              const p = live[i.id];
+              const qty = isEdition(p) ? Math.min(i.qty || 1, editionRemaining(p)) : 1;
+              return { ...i, ...p, qty, cartId: i.cartId };
+            });
           const changed =
-            next.length !== prev.length || next.some((i, n) => i.price !== prev[n].price);
+            next.length !== prev.length ||
+            next.some((i, n) => i.price !== prev[n].price || i.qty !== prev[n].qty);
           return changed ? next : prev;
         });
       })
@@ -222,21 +259,50 @@ export default function StorePage({ settings }) {
   };
 
   // ---- cart ----
-  const isInCart = (productId) => cart.some((i) => i.id === productId);
+  // One cart line per product. Editions carry a qty on that line;
+  // one-of-ones are always qty 1.
+  const qtyInCart = (productId) => cart.find((i) => i.id === productId)?.qty || 0;
 
-  const addToCart = (product) => {
-    if (isInCart(product.id) || availabilityOf(product) !== "available") return;
-    setCart((prev) => [...prev, { ...product, cartId: Date.now() + Math.random() }]);
+  // Can one more go in the cart? One-of-ones: only if it isn't there
+  // yet. Editions: only while the cart holds fewer than what's left.
+  const canAddMore = (product) =>
+    availabilityOf(product) === "available" &&
+    qtyInCart(product.id) < (isEdition(product) ? editionRemaining(product) : 1);
+
+  const addToCart = (product, qty = 1) => {
+    if (!canAddMore(product)) return;
+    const room = (isEdition(product) ? editionRemaining(product) : 1) - qtyInCart(product.id);
+    const adding = Math.max(1, Math.min(qty, room));
+
+    setCart((prev) => {
+      const existing = prev.find((i) => i.id === product.id);
+      if (existing) {
+        return prev.map((i) =>
+          i.id === product.id ? { ...i, qty: (i.qty || 1) + adding } : i
+        );
+      }
+      return [...prev, { ...product, qty: adding, cartId: Date.now() + Math.random() }];
+    });
     setSelectedProduct(null);
-    showToast(`${product.name} added`);
+    showToast(adding > 1 ? `${adding} × ${product.name} added` : `${product.name} added`);
   };
+
+  const setQty = (cartId, qty) =>
+    setCart((prev) =>
+      prev.map((i) => {
+        if (i.cartId !== cartId) return i;
+        const max = isEdition(i) ? Math.max(1, editionRemaining(i)) : 1;
+        return { ...i, qty: Math.max(1, Math.min(qty, max)) };
+      })
+    );
 
   const removeFromCart = (cartId) =>
     setCart((prev) => prev.filter((i) => i.cartId !== cartId));
 
-  const cartCount = cart.length;
-  const cartTotal = cart.reduce((sum, i) => sum + i.price, 0);
+  const cartCount = cart.reduce((sum, i) => sum + (i.qty || 1), 0);
+  const cartTotal = cart.reduce((sum, i) => sum + i.price * (i.qty || 1), 0);
   const cartNeedsApproval = cart.some(needsApproval);
+  const cartHasEditions = cart.some(isEdition);
 
   const handleCheckout = async () => {
     const errs = {};
@@ -258,7 +324,7 @@ export default function StorePage({ settings }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          items: cart.map((i) => ({ id: i.id })),
+          items: cart.map((i) => ({ id: i.id, qty: i.qty || 1 })),
           customer: {
             name: checkoutForm.name,
             email: checkoutForm.email,
@@ -270,6 +336,16 @@ export default function StorePage({ settings }) {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok || !data.url) {
+        // Someone else bought copies of an edition while this shopper
+        // was checking out. Trim their cart to what's left so the next
+        // try goes through.
+        if (data.remaining?.id && data.remaining.left > 0) {
+          setCart((prev) =>
+            prev.map((i) =>
+              i.id === data.remaining.id ? { ...i, qty: data.remaining.left } : i
+            )
+          );
+        }
         setCheckoutSubmitError(data.error || "Something went wrong. Please try again.");
         setCheckoutSubmitting(false);
         return;
@@ -287,7 +363,7 @@ export default function StorePage({ settings }) {
 
   const introLine =
     settings?.storeIntro ||
-    "Finished, one-of-one pieces looking for a home. What you see is what ships — there is no second copy of anything on this page.";
+    "Finished pieces looking for a home — one-of-ones, plus the odd small run. What you see is what ships.";
 
   return (
     <div>
@@ -417,9 +493,12 @@ export default function StorePage({ settings }) {
         ) : (
           <div className="shop-grid">
             {visible.map((product) => {
-              const inCart = isInCart(product.id);
+              const inCartQty = qtyInCart(product.id);
+              const addable = canAddMore(product);
               const state = availabilityOf(product);
               const gone = state !== "available";
+              const edition = isEdition(product);
+              const stock = stockLabel(product);
 
               return (
                 <div className={`product-card ${gone ? "is-gone" : ""}`} key={product.id}>
@@ -434,26 +513,32 @@ export default function StorePage({ settings }) {
                       <div className="product-img-emoji">🎨</div>
                     )}
 
-                    {state === "sold" && <div className="state-badge sold">Sold</div>}
+                    {state === "sold" && (
+                      <div className="state-badge sold">{edition ? "Sold out" : "Sold"}</div>
+                    )}
                     {state === "onhold" && <div className="state-badge onhold">On hold</div>}
+                    {!gone && edition && (
+                      <div className="state-badge edition">Edition of {product.editionSize}</div>
+                    )}
 
                     {!gone && (
                       <button
-                        className={`quick-add-btn ${inCart ? "is-added" : ""}`}
+                        className={`quick-add-btn ${!addable ? "is-added" : ""}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           addToCart(product);
                           setCartOpen(true);
                         }}
-                        disabled={inCart}
+                        disabled={!addable}
                       >
-                        {inCart ? "✓ Added" : "+ Add"}
+                        {!addable ? "✓ Added" : inCartQty > 0 ? "+ 1 more" : "+ Add"}
                       </button>
                     )}
                   </div>
 
                   <div className="product-info" onClick={() => setSelectedProduct(product)}>
                     <div className="product-name">{product.name}</div>
+                    {stock && !gone && <div className="product-stock">{stock}</div>}
                     <div className="product-meta">
                       <span className="product-size">
                         {[product.category, product.size].filter(Boolean).join(" · ")}
@@ -477,9 +562,10 @@ export default function StorePage({ settings }) {
         <div className="section-label" style={{ color: "var(--warm-gold)" }}>~ how it works</div>
         <div className="card">
           <p>
-            Every piece here is <strong>already finished</strong> — a real, one-of-one object,
-            not a preview or a print run. Add what you want to your cart and check out securely
-            through Stripe. Once something sells, it's gone for good.
+            Every piece here is <strong>already finished</strong>. Most are one-of-one objects —
+            once they sell, they're gone for good. A few are <strong>small editions</strong>: a
+            small run of pieces made to the same design, with a live count of how many are left. Add what you
+            want to your cart and check out securely through Stripe.
           </p>
           <p style={{ marginTop: 14 }}>
             A few pieces need the artist's go-ahead before they're sold. Those go through the
@@ -503,10 +589,10 @@ export default function StorePage({ settings }) {
       {selectedProduct && (
         <ProductModal
           product={selectedProduct}
-          inCart={isInCart(selectedProduct.id)}
+          inCartQty={qtyInCart(selectedProduct.id)}
           onClose={() => setSelectedProduct(null)}
-          onAdd={(product) => {
-            addToCart(product);
+          onAdd={(product, qty) => {
+            addToCart(product, qty);
             setCartOpen(true);
           }}
         />
@@ -531,7 +617,11 @@ export default function StorePage({ settings }) {
                   Pick something from the shop to get started.
                 </div>
               ) : (
-                cart.map((item) => (
+                cart.map((item) => {
+                  const edition = isEdition(item);
+                  const qty = item.qty || 1;
+                  const max = edition ? editionRemaining(item) : 1;
+                  return (
                   <div className="cart-item" key={item.cartId}>
                     <div className="cart-item-thumb">
                       {item.image ? (
@@ -546,12 +636,22 @@ export default function StorePage({ settings }) {
                     <div className="cart-item-info">
                       <div className="cart-item-name">{item.name}</div>
                       <div className="cart-item-detail">
-                        {[item.category, item.size].filter(Boolean).join(" · ") || "One of one"}
+                        {[item.category, item.size].filter(Boolean).join(" · ") ||
+                          (edition ? `Edition of ${item.editionSize}` : "One of one")}
                       </div>
+                      {edition && (
+                        <QtyStepper
+                          value={qty}
+                          max={max}
+                          compact
+                          label={item.name}
+                          onChange={(n) => setQty(item.cartId, n)}
+                        />
+                      )}
                       {needsApproval(item) && <div className="cart-item-flag">Needs approval</div>}
                     </div>
                     <div className="cart-item-right">
-                      <div className="cart-item-price">${item.price}</div>
+                      <div className="cart-item-price">${usd(item.price * qty)}</div>
                       <button
                         className="cart-remove"
                         onClick={() => removeFromCart(item.cartId)}
@@ -561,7 +661,8 @@ export default function StorePage({ settings }) {
                       </button>
                     </div>
                   </div>
-                ))
+                  );
+                })
               )}
             </div>
             {cart.length > 0 && (
@@ -569,7 +670,7 @@ export default function StorePage({ settings }) {
                 {cartNeedsApproval && <HoldNotice compact />}
                 <div className="cart-total">
                   <span className="cart-total-label">Total</span>
-                  <span className="cart-total-price">${cartTotal}</span>
+                  <span className="cart-total-price">${usd(cartTotal)}</span>
                 </div>
                 <button
                   className="checkout-btn"
@@ -604,13 +705,14 @@ export default function StorePage({ settings }) {
                   <span>
                     {item.name}
                     {item.size ? ` (${item.size})` : ""}
+                    {(item.qty || 1) > 1 ? ` ×${item.qty}` : ""}
                   </span>
-                  <span>${item.price}</span>
+                  <span>${usd(item.price * (item.qty || 1))}</span>
                 </div>
               ))}
               <div className="checkout-summary-total">
                 <span>Total</span>
-                <span>${cartTotal}</span>
+                <span>${usd(cartTotal)}</span>
               </div>
             </div>
 
@@ -679,8 +781,8 @@ export default function StorePage({ settings }) {
               {checkoutSubmitting
                 ? "Redirecting to Stripe..."
                 : cartNeedsApproval
-                  ? `Place a hold — $${cartTotal}`
-                  : `Continue to Payment — $${cartTotal}`}
+                  ? `Place a hold — $${usd(cartTotal)}`
+                  : `Continue to Payment — $${usd(cartTotal)}`}
             </button>
 
             <div
@@ -692,7 +794,9 @@ export default function StorePage({ settings }) {
                 lineHeight: 1.6,
               }}
             >
-              Every piece is one-of-one and sold exactly as pictured.
+              {cartHasEditions
+                ? "One-of-ones are sold exactly as pictured. Edition pieces are made to the same design."
+                : "Every piece is one-of-one and sold exactly as pictured."}
             </div>
           </div>
         </div>
@@ -724,10 +828,19 @@ function HoldNotice({ compact = false }) {
 // ==========================================
 // PRODUCT DETAIL
 // ==========================================
-function ProductModal({ product, inCart, onClose, onAdd }) {
+function ProductModal({ product, inCartQty, onClose, onAdd }) {
   const state = availabilityOf(product);
   const gone = state !== "available";
   const hold = needsApproval(product);
+  const edition = isEdition(product);
+  const left = editionRemaining(product);
+
+  // What can still go in the cart from here, after what's already
+  // there. One-of-ones: 1 or 0.
+  const room = Math.max(0, (edition ? left : 1) - inCartQty);
+  const [qty, setQty] = useState(1);
+  const pick = Math.max(1, Math.min(qty, room));
+  const total = usd(product.price * pick);
 
   const photos = useMemo(
     () => [product.image, ...(product.gallery || [])].filter(Boolean),
@@ -741,12 +854,13 @@ function ProductModal({ product, inCart, onClose, onAdd }) {
     product.medium && { label: "Materials", value: product.medium },
   ].filter(Boolean);
 
+  const many = edition && pick > 1;
   let buttonLabel;
-  if (state === "sold") buttonLabel = "Sold";
+  if (state === "sold") buttonLabel = edition ? "Sold out" : "Sold";
   else if (state === "onhold") buttonLabel = "On hold for another buyer";
-  else if (inCart) buttonLabel = "Already in Cart";
-  else if (hold) buttonLabel = `Request this piece — $${product.price}`;
-  else buttonLabel = `Add to Cart — $${product.price}`;
+  else if (room === 0) buttonLabel = edition ? "All available copies are in your cart" : "Already in Cart";
+  else if (hold) buttonLabel = many ? `Request ${pick} — $${total}` : `Request this piece — $${total}`;
+  else buttonLabel = many ? `Add ${pick} to Cart — $${total}` : `Add to Cart — $${total}`;
 
   return (
     <div className="overlay" onClick={onClose}>
@@ -764,8 +878,13 @@ function ProductModal({ product, inCart, onClose, onAdd }) {
           ) : (
             "🎨"
           )}
-          {state === "sold" && <div className="state-badge sold modal-badge">Sold</div>}
+          {state === "sold" && (
+            <div className="state-badge sold modal-badge">{edition ? "Sold out" : "Sold"}</div>
+          )}
           {state === "onhold" && <div className="state-badge onhold modal-badge">On hold</div>}
+          {!gone && edition && (
+            <div className="state-badge edition modal-badge">Edition of {product.editionSize}</div>
+          )}
         </div>
 
         {photos.length > 1 && (
@@ -813,7 +932,7 @@ function ProductModal({ product, inCart, onClose, onAdd }) {
             </div>
           )}
 
-          <div className="modal-section-label">One of One</div>
+          <div className="modal-section-label">{edition ? "Limited Edition" : "One of One"}</div>
           <p
             style={{
               fontSize: 13,
@@ -823,14 +942,63 @@ function ProductModal({ product, inCart, onClose, onAdd }) {
               fontWeight: 300,
             }}
           >
-            This exact piece, pictured above, is what ships. There is no other one like it.
+            {edition
+              ? gone
+                ? `A run of ${product.editionSize}, and every one has found a home.`
+                : `One of a run of ${product.editionSize}, all made to the same design. ${
+                    left === 1 ? "Just 1 left." : `${left} left.`
+                  }`
+              : "This exact piece, pictured above, is what ships. There is no other one like it."}
           </p>
 
-          <button className="add-to-cart-btn" disabled={gone || inCart} onClick={() => onAdd(product)}>
+          {edition && !gone && room > 1 && (
+            <div className="modal-qty">
+              <span className="modal-qty-label">How many</span>
+              <QtyStepper value={pick} max={room} label={product.name} onChange={setQty} />
+            </div>
+          )}
+
+          <button
+            className="add-to-cart-btn"
+            disabled={gone || room === 0}
+            onClick={() => onAdd(product, pick)}
+          >
             {buttonLabel}
           </button>
+          {edition && !gone && inCartQty > 0 && room > 0 && (
+            <div className="modal-in-cart">{inCartQty} already in your cart</div>
+          )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ==========================================
+// QUANTITY STEPPER
+// Editions only. Clamped to 1..max so the cart can never ask for more
+// copies than are left.
+// ==========================================
+function QtyStepper({ value, max, onChange, label, compact = false }) {
+  return (
+    <div className={`qty-stepper ${compact ? "compact" : ""}`}>
+      <button
+        type="button"
+        onClick={() => onChange(Math.max(1, value - 1))}
+        disabled={value <= 1}
+        aria-label={`One fewer ${label}`}
+      >
+        −
+      </button>
+      <span aria-live="polite">{value}</span>
+      <button
+        type="button"
+        onClick={() => onChange(Math.min(max, value + 1))}
+        disabled={value >= max}
+        aria-label={`One more ${label}`}
+      >
+        +
+      </button>
     </div>
   );
 }
@@ -964,11 +1132,33 @@ const STORE_CSS = `
 }
 .state-badge.sold { background: rgba(212,160,160,0.85); color: #1a1512; }
 .state-badge.onhold { background: rgba(219,192,120,0.85); color: #1a1512; }
+.state-badge.edition { background: rgba(14,13,11,0.72); color: var(--lavender); border: 1px solid rgba(184,165,204,0.35); }
+.product-stock { font-size: 11px; font-weight: 600; letter-spacing: 0.3px; color: var(--lavender); margin-bottom: 4px; }
+
+/* ---- QUANTITY (editions only) ---- */
+.qty-stepper {
+  display: inline-flex; align-items: center; gap: 2px;
+  border: 1.5px solid var(--border); border-radius: 99px; padding: 3px;
+}
+.qty-stepper button {
+  width: 32px; height: 32px; border-radius: 50%; border: none;
+  background: transparent; color: var(--text); font-size: 17px; line-height: 1;
+  cursor: pointer; font-family: 'Inter', sans-serif; transition: background 0.15s;
+}
+.qty-stepper button:hover:not(:disabled) { background: var(--border); }
+.qty-stepper button:disabled { color: var(--border); cursor: not-allowed; }
+.qty-stepper span { min-width: 28px; text-align: center; font-size: 14px; font-weight: 700; }
+.qty-stepper.compact { margin-top: 8px; padding: 2px; }
+.qty-stepper.compact button { width: 26px; height: 26px; font-size: 15px; }
+.qty-stepper.compact span { min-width: 22px; font-size: 13px; }
+.modal-qty { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.modal-qty-label { font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); }
+.modal-in-cart { text-align: center; font-size: 12px; color: var(--text-dim); margin-top: 10px; }
 .modal-badge { top: 16px; left: 16px; }
 .product-card.is-gone .product-img-wrap { filter: grayscale(0.5) brightness(0.6); }
 .product-card.is-gone .product-price { color: var(--text-dim); }
 
-/* ---- QUICK ADD (one tap, no quantity - each piece is unique) ---- */
+/* ---- QUICK ADD (one tap adds one; editions can tap again for more) ---- */
 .quick-add-btn {
   position: absolute; bottom: 12px; right: 12px; z-index: 5;
   height: 38px; padding: 0 16px; border-radius: 10px;

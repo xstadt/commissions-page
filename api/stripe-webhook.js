@@ -17,6 +17,12 @@
 //     payment_intent.canceled     -> artist released it (or the 7-day
 //                                    hold expired), piece back on sale
 //
+// Editions (a run of 15 or 100 sold from one listing) follow the
+// same life, but instead of flipping `sold` they log one entry per
+// order in `editionOrders` — pending while a card is held, paid once
+// the money moves, removed if the hold is released. The shop works
+// out what's left from that log.
+//
 // Events this doesn't recognise are acknowledged and ignored.
 //
 // STRIPE DASHBOARD: send these three event types to this endpoint —
@@ -27,6 +33,7 @@
 
 import Stripe from "stripe";
 import { createClient } from "@sanity/client";
+import { isEdition, unitsTaken, orderKey } from "./_inventory.js";
 
 // Local development only - see the note in create-checkout-session.js
 if (!process.env.VERCEL) {
@@ -88,6 +95,81 @@ async function notify(payload) {
 
 function money(cents) {
   return `$${((cents || 0) / 100).toFixed(2)}`;
+}
+
+function qtyLabel(qty) {
+  return qty > 1 ? ` ×${qty}` : "";
+}
+
+// ------------------------------------------------------------
+// Add (or advance) one order in an edition's sales log.
+//
+// Two buyers can finish checkout for the same edition within the
+// same second. Each write is tied to the revision we just read, and
+// if someone else wrote first Sanity refuses ours, we re-read and try
+// again, so neither order gets dropped.
+//
+// Returns how the write went, plus how many copies past the edition
+// size this order went, in case two checkouts raced for the last few
+// (Stripe has already taken the money by now, so the order is
+// recorded either way and the artist gets told to sort it out).
+// ------------------------------------------------------------
+async function recordEditionOrder(sanity, docId, entry) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const doc = await sanity.fetch(
+      `*[_id == $id][0]{ _rev, name, editionSize, editionOrders }`,
+      { id: docId }
+    );
+    if (!doc) return { status: "missing" };
+
+    const orders = doc.editionOrders || [];
+    const existing = orders.find((o) => o.sessionId === entry.sessionId);
+    if (existing && existing.state === entry.state) {
+      return { status: "duplicate", name: doc.name };
+    }
+
+    const others = orders.filter((o) => o.sessionId !== entry.sessionId);
+    const oversold = Math.max(0, unitsTaken({ editionOrders: others }) + entry.qty - doc.editionSize);
+
+    let patch = sanity.patch(docId).ifRevisionId(doc._rev);
+    if (existing) {
+      patch = patch.set({
+        [`editionOrders[_key=="${existing._key}"].state`]: entry.state,
+        [`editionOrders[_key=="${existing._key}"].paymentIntentId`]: entry.paymentIntentId,
+      });
+    } else {
+      patch = patch
+        .setIfMissing({ editionOrders: [] })
+        .append("editionOrders", [
+          { _key: orderKey(entry.sessionId, docId), _type: "editionOrder", ...entry },
+        ]);
+    }
+
+    try {
+      await patch.commit();
+      return { status: existing ? "updated" : "added", oversold, name: doc.name };
+    } catch (err) {
+      // 409 = someone else changed the document since we read it.
+      if (err?.statusCode === 409) continue;
+      throw err;
+    }
+  }
+  throw new Error(`Gave up recording edition order on ${docId} after repeated conflicts`);
+}
+
+// ------------------------------------------------------------
+// Find the edition entries tied to one payment that are still
+// waiting on the artist.
+// ------------------------------------------------------------
+async function pendingEditionEntries(sanity, paymentIntentId) {
+  const docs = await sanity.fetch(
+    `*[_type == "product" && defined(editionSize) && $pi in editionOrders[].paymentIntentId]{
+       _id, name, "slug": slug.current,
+       "entries": editionOrders[paymentIntentId == $pi && state == "pending"]{ _key, qty }
+     }`,
+    { pi: paymentIntentId }
+  );
+  return docs.filter((d) => d.entries?.length > 0);
 }
 
 function stripeLink(paymentIntentId, livemode) {
@@ -174,7 +256,7 @@ async function handleCheckoutCompleted(event, stripe, sanity) {
   const lines = lineItems
     .map((li) => {
       const name = li.price?.product?.name || li.description || "Item";
-      return `• ${name} — ${money(li.amount_total)}`;
+      return `• ${name}${qtyLabel(li.quantity || 1)} — ${money(li.amount_total)}`;
     })
     .join("\n");
 
@@ -182,35 +264,47 @@ async function handleCheckoutCompleted(event, stripe, sanity) {
   // The slug was embedded in metadata at checkout time, so this is an
   // exact match rather than guessing from the name.
   //
-  // Both a charge and a hold flip `sold` on. That's deliberate: a piece
-  // someone has a card hold against must not stay buyable, or two
-  // people end up owning the same one-of-one object. `orderState` is
-  // what separates "gone forever" from "waiting on the artist".
+  // One-of-ones: both a charge and a hold flip `sold` on. That's
+  // deliberate: a piece someone has a card hold against must not stay
+  // buyable, or two people end up owning the same object. `orderState`
+  // is what separates "gone forever" from "waiting on the artist".
+  //
+  // Editions: the order goes into the edition's sales log with its
+  // copy count, and the shop's count goes down by that many.
   let alreadyProcessed = false;
+  const stockWarnings = [];
 
-  const soldSlugs = lineItems
-    .map((li) => li.price?.product?.metadata?.sanity_slug)
-    .filter(Boolean);
+  const soldLines = lineItems
+    .map((li) => ({
+      slug: li.price?.product?.metadata?.sanity_slug,
+      qty: li.quantity || 1,
+    }))
+    .filter((l) => l.slug);
+  const soldSlugs = soldLines.map((l) => l.slug);
 
   if (soldSlugs.length > 0) {
     const matches = await sanity.fetch(
       `*[_type == "product" && slug.current in $slugs]{
-         _id, "slug": slug.current, sold, orderState, soldOrderId
+         _id, name, "slug": slug.current, sold, orderState, soldOrderId, editionSize
        }`,
       { slugs: soldSlugs }
     );
 
-    // If every piece already carries THIS checkout reference at THIS
-    // stage, we've seen the event before — Stripe re-sends webhooks on
-    // timeout, and without this the artist gets the same email twice.
-    alreadyProcessed =
-      matches.length > 0 &&
-      matches.every((m) => m.soldOrderId === full.id && m.orderState === stage);
+    const oneOffs = matches.filter((m) => !isEdition(m));
+    const editions = matches.filter(isEdition);
+    const now = new Date().toISOString();
 
-    if (!alreadyProcessed && matches.length > 0) {
-      const now = new Date().toISOString();
+    // If every one-of-one already carries THIS checkout reference at
+    // THIS stage, we've seen the event before — Stripe re-sends
+    // webhooks on timeout, and without this the artist gets the same
+    // email twice.
+    const oneOffsDone = oneOffs.every(
+      (m) => m.soldOrderId === full.id && m.orderState === stage
+    );
+
+    if (!oneOffsDone) {
       const tx = sanity.transaction();
-      matches.forEach((m) =>
+      oneOffs.forEach((m) =>
         tx.patch(m._id, {
           set: {
             sold: true,
@@ -223,6 +317,28 @@ async function handleCheckoutCompleted(event, stripe, sanity) {
       );
       await tx.commit();
     }
+
+    let editionsDone = true;
+    for (const m of editions) {
+      const qty = soldLines
+        .filter((l) => l.slug === m.slug)
+        .reduce((n, l) => n + l.qty, 0);
+      const result = await recordEditionOrder(sanity, m._id, {
+        qty,
+        state: stage,
+        sessionId: full.id,
+        paymentIntentId: intentId || "",
+        at: now,
+      });
+      if (result.status !== "duplicate") editionsDone = false;
+      if (result.oversold > 0) {
+        stockWarnings.push(
+          `"${m.name}" went ${result.oversold} over its edition of ${m.editionSize} — two checkouts finished at nearly the same time. Refund ${result.oversold} ${result.oversold === 1 ? "copy" : "copies"} in Stripe, or make extra.`
+        );
+      }
+    }
+
+    alreadyProcessed = matches.length > 0 && oneOffsDone && editionsDone;
 
     const missed = soldSlugs.filter((slug) => !matches.some((m) => m.slug === slug));
     if (missed.length > 0) {
@@ -255,10 +371,13 @@ async function handleCheckoutCompleted(event, stripe, sanity) {
   const held = stage === "pending";
 
   await notify({
-    form_type: held ? "ORDER AWAITING YOUR APPROVAL" : "PAID Order",
+    form_type:
+      (held ? "ORDER AWAITING YOUR APPROVAL" : "PAID Order") +
+      (stockWarnings.length ? " — OVERSOLD, CHECK STOCK" : ""),
     action_needed: held
       ? "Their card is on hold — no money has moved yet. Open the Stripe link below and either Capture it to take payment, or Cancel it to release the hold and put the piece back in the shop. Card holds expire on their own after 7 days."
       : "Payment cleared. Nothing to approve — just make and ship it.",
+    ...(stockWarnings.length ? { stock_warning: stockWarnings.join("\n") } : {}),
     name: full.customer_details?.name || full.metadata?.customer_name || "",
     email: full.customer_details?.email || "",
     phone: full.customer_details?.phone || "",
@@ -282,28 +401,48 @@ async function handleCaptured(event, sanity) {
   // Only pieces that were actually waiting on approval. Instant-charge
   // orders also fire this event, and they were already settled by
   // checkout.session.completed, so they match nothing here.
-  const matches = await sanity.fetch(
-    `*[_type == "product" && paymentIntentId == $pi && orderState == "pending"]{
-       _id, name, "slug": slug.current
-     }`,
-    { pi: intent.id }
-  );
+  const [matches, editionDocs] = await Promise.all([
+    sanity.fetch(
+      `*[_type == "product" && paymentIntentId == $pi && orderState == "pending"]{
+         _id, name, "slug": slug.current
+       }`,
+      { pi: intent.id }
+    ),
+    pendingEditionEntries(sanity, intent.id),
+  ]);
 
-  if (matches.length === 0) return;
+  if (matches.length === 0 && editionDocs.length === 0) return;
 
   const tx = sanity.transaction();
   matches.forEach((m) =>
     tx.patch(m._id, { set: { sold: true, orderState: "paid" } })
   );
+  editionDocs.forEach((d) =>
+    tx.patch(d._id, {
+      set: Object.fromEntries(
+        d.entries.map((e) => [`editionOrders[_key=="${e._key}"].state`, "paid"])
+      ),
+    })
+  );
   await tx.commit();
 
-  console.log(`Captured ${intent.id} — marked paid:`, matches.map((m) => m.slug).join(", "));
+  const summary = [
+    ...matches.map((m) => `• ${m.name}`),
+    ...editionDocs.map(
+      (d) => `• ${d.name}${qtyLabel(d.entries.reduce((n, e) => n + (e.qty || 0), 0))}`
+    ),
+  ];
+
+  console.log(
+    `Captured ${intent.id} — marked paid:`,
+    [...matches, ...editionDocs].map((m) => m.slug).join(", ")
+  );
 
   await notify({
     form_type: "Approved order — payment captured",
     action_needed: "You approved this one in Stripe. The money is on its way to your account.",
     amount: money(intent.amount_received || intent.amount),
-    order_summary: matches.map((m) => `• ${m.name}`).join("\n"),
+    order_summary: summary.join("\n"),
     stripe_payment: intent.id,
   });
 }
@@ -315,14 +454,17 @@ async function handleCaptured(event, sanity) {
 async function handleReleased(event, sanity) {
   const intent = event.data.object;
 
-  const matches = await sanity.fetch(
-    `*[_type == "product" && paymentIntentId == $pi && orderState == "pending"]{
-       _id, name, "slug": slug.current
-     }`,
-    { pi: intent.id }
-  );
+  const [matches, editionDocs] = await Promise.all([
+    sanity.fetch(
+      `*[_type == "product" && paymentIntentId == $pi && orderState == "pending"]{
+         _id, name, "slug": slug.current
+       }`,
+      { pi: intent.id }
+    ),
+    pendingEditionEntries(sanity, intent.id),
+  ]);
 
-  if (matches.length === 0) return;
+  if (matches.length === 0 && editionDocs.length === 0) return;
 
   const tx = sanity.transaction();
   matches.forEach((m) =>
@@ -331,16 +473,33 @@ async function handleReleased(event, sanity) {
       unset: ["soldOrderId", "paymentIntentId", "soldAt"],
     })
   );
+  // Dropping the entry from the sales log is what puts those copies
+  // back on sale — the shop's count goes back up by that many.
+  editionDocs.forEach((d) =>
+    tx.patch(d._id, {
+      unset: d.entries.map((e) => `editionOrders[_key=="${e._key}"]`),
+    })
+  );
   await tx.commit();
 
-  console.log(`Released ${intent.id} — back on sale:`, matches.map((m) => m.slug).join(", "));
+  const summary = [
+    ...matches.map((m) => `• ${m.name}`),
+    ...editionDocs.map(
+      (d) => `• ${d.name}${qtyLabel(d.entries.reduce((n, e) => n + (e.qty || 0), 0))}`
+    ),
+  ];
+
+  console.log(
+    `Released ${intent.id} — back on sale:`,
+    [...matches, ...editionDocs].map((m) => m.slug).join(", ")
+  );
 
   await notify({
     form_type: "Hold released — pieces back in the shop",
     action_needed:
       "This hold was cancelled or expired, so no money changed hands and these pieces are listed for sale again. The buyer was not told — reach out if they were expecting this one.",
     reason: intent.cancellation_reason || "cancelled or expired",
-    order_summary: matches.map((m) => `• ${m.name}`).join("\n"),
+    order_summary: summary.join("\n"),
     stripe_payment: intent.id,
   });
 }

@@ -4,16 +4,17 @@
 // Runs on Vercel's servers, NOT in the customer's browser.
 // This is the only place the Stripe secret key is ever touched.
 //
-// Every piece here is one-of-one and already made — there's no
-// palette to pick and no quantity to choose. The browser only
-// tells us WHICH pieces. We look up the price, the availability,
-// and the payment mode ourselves, so nobody can tamper with the
-// total, buy something that's already gone, or downgrade an
-// "ask me first" item into an instant charge.
+// Most pieces are one-of-one; some are editions (a run of 15 or
+// 100 matching pieces sold from one listing). The browser only
+// tells us WHICH pieces and, for editions, HOW MANY. We look up the
+// price, what's left, and the payment mode ourselves, so nobody can
+// tamper with the total, buy something that's already gone, or
+// downgrade an "ask me first" item into an instant charge.
 // ============================================================
 
 import Stripe from "stripe";
 import { createClient } from "@sanity/client";
+import { isEdition, editionRemaining } from "./_inventory.js";
 
 // Local development only: `vercel dev` does not reliably inject
 // .env.local into the function process, so we load it ourselves.
@@ -36,6 +37,7 @@ const sanity = createClient({
 });
 
 const MAX_LINES = 20; // max distinct pieces in one order
+const MAX_QTY = 25; // max copies of one edition in one order
 
 // Fallbacks used only if Site Settings hasn't been filled in yet.
 const DEFAULT_SHIPPING_USD = 8;
@@ -69,9 +71,10 @@ export async function POST(request) {
       );
     }
 
-    // Reject up front if the same piece was sent twice — a one-of-one
-    // item can't be bought as "quantity 2". Cheaper to check before we
-    // hit Sanity.
+    // Reject up front if the same piece was sent twice. The cart keeps
+    // one line per piece (editions carry a quantity on that line), so
+    // a repeat means a stale or tampered cart. Cheaper to check before
+    // we hit Sanity.
     const rawIds = items.map((i) => String(i.id));
     if (new Set(rawIds).size !== rawIds.length) {
       return Response.json(
@@ -85,6 +88,7 @@ export async function POST(request) {
       sanity.fetch(
         `*[_type == "product" && slug.current in $ids]{
            "id": slug.current, name, size, price, sold, orderState, paymentMode,
+           editionSize, editionOrders[]{ qty, state },
            "category": category->title
          }`,
         { ids: rawIds }
@@ -111,7 +115,42 @@ export async function POST(request) {
           { status: 400 }
         );
       }
-      if (p.sold) {
+      const edition = isEdition(p);
+
+      // Quantity: always 1 for a one-of-one. For an edition, a whole
+      // number the buyer picked, checked against what's actually left.
+      const qty = edition ? Number(item.qty ?? 1) : 1;
+      if (!edition && item.qty != null && Number(item.qty) !== 1) {
+        return Response.json(
+          { error: `"${p.name}" is one-of-one — please refresh your cart.` },
+          { status: 400 }
+        );
+      }
+      if (!Number.isInteger(qty) || qty < 1 || qty > MAX_QTY) {
+        return Response.json(
+          { error: `Please pick between 1 and ${MAX_QTY} of "${p.name}".` },
+          { status: 400 }
+        );
+      }
+
+      if (edition) {
+        const left = editionRemaining(p);
+        if (left === 0) {
+          return Response.json(
+            { error: `Sorry — "${p.name}" just sold out. Please remove it from your cart.` },
+            { status: 409 }
+          );
+        }
+        if (qty > left) {
+          return Response.json(
+            {
+              error: `Only ${left} of "${p.name}" left — please lower the quantity in your cart.`,
+              remaining: { id: p.id, left },
+            },
+            { status: 409 }
+          );
+        }
+      } else if (p.sold) {
         const gone =
           p.orderState === "pending"
             ? `Sorry — "${p.name}" is on hold for someone else. Please remove it from your cart.`
@@ -130,27 +169,30 @@ export async function POST(request) {
       // the browser.
       if (p.paymentMode === "approval") needsApproval = true;
 
-      // Every piece is one-of-one - quantity is always exactly 1.
       // The Sanity slug rides along in metadata so the webhook can
-      // mark the right piece sold without guessing from the name.
+      // find the right piece without guessing from the name. Stripe
+      // keeps the quantity on the line item, so the webhook reads the
+      // copy count from there.
       const subtitle = [p.category, p.size].filter(Boolean).join(" · ");
+      const kind = edition
+        ? `Limited edition of ${p.editionSize}, handmade.`
+        : "One-of-one, handmade piece.";
 
       line_items.push({
-        quantity: 1,
+        quantity: qty,
         price_data: {
           currency: "usd",
           unit_amount: Math.round(p.price * 100), // Stripe works in cents
           product_data: {
             name: p.size ? `${p.name} — ${p.size}` : p.name,
-            description: subtitle
-              ? `${subtitle} · One-of-one, handmade piece.`
-              : "One-of-one, handmade piece.",
+            description: subtitle ? `${subtitle} · ${kind}` : kind,
             metadata: { sanity_slug: p.id },
           },
         },
       });
 
-      summaryLines.push(p.size ? `${p.name} (${p.size})` : p.name);
+      const label = p.size ? `${p.name} (${p.size})` : p.name;
+      summaryLines.push(qty > 1 ? `${label} ×${qty}` : label);
       slugs.push(p.id);
     }
 
@@ -204,7 +246,7 @@ export async function POST(request) {
       phone_number_collection: { enabled: true },
       allow_promotion_codes: true,
 
-      // IMPORTANT for one-of-one stock: a Checkout Session lasts 24 hours
+      // IMPORTANT for limited stock: a Checkout Session lasts 24 hours
       // by default, and Stripe does NOT re-check availability when the
       // customer finally pays. That means an abandoned tab could sit on a
       // piece for a full day and then buy it out from under someone.

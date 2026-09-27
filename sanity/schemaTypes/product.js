@@ -39,6 +39,19 @@ export default {
       validation: (Rule) => Rule.required(),
     },
     {
+      name: "editionSize",
+      title: "Edition Size",
+      type: "number",
+      group: "details",
+      description:
+        "Leave blank for a one-of-one. For a run of matching pieces, enter how many exist (e.g. 15 or 100). They all sell from this one listing and the shop counts down on its own.",
+      validation: (Rule) =>
+        Rule.integer()
+          .min(2)
+          .max(1000)
+          .error("Use a whole number from 2 to 1000, or leave it blank for a one-of-one."),
+    },
+    {
       name: "size",
       title: "Size or Dimensions",
       type: "string",
@@ -69,7 +82,7 @@ export default {
       group: "media",
       options: { hotspot: true },
       description:
-        "The photo of this exact piece. Everything here is one-of-one, so shoot the real thing rather than using a mockup.",
+        "Shoot the real thing rather than using a mockup. For an edition, photograph one from the run.",
       validation: (Rule) => Rule.required(),
     },
     {
@@ -151,8 +164,53 @@ export default {
       type: "boolean",
       group: "status",
       description:
-        "Flips on by itself the moment someone buys or reserves this piece. You can also switch it on yourself to quietly pull something from the store.",
+        "One-of-ones: flips on by itself the moment someone buys or reserves the piece. Editions: never flips on its own (the count does the work), so only switch it on to end the run early. Either way, you can switch it on yourself to quietly pull something from the store.",
       initialValue: false,
+    },
+    {
+      name: "editionOrders",
+      title: "Edition Sales",
+      type: "array",
+      group: "status",
+      description:
+        "Filled in automatically, one line per order. Awaiting your approval means those copies are set aside while a card is on hold. Approve or release it in Stripe and this updates itself.",
+      readOnly: true,
+      hidden: ({ document }) => typeof document?.editionSize !== "number",
+      of: [
+        {
+          type: "object",
+          name: "editionOrder",
+          fields: [
+            { name: "qty", title: "Copies", type: "number" },
+            {
+              name: "state",
+              title: "Stage",
+              type: "string",
+              options: {
+                list: [
+                  { title: "Awaiting your approval", value: "pending" },
+                  { title: "Paid", value: "paid" },
+                ],
+              },
+            },
+            { name: "sessionId", title: "Stripe Checkout Reference", type: "string" },
+            { name: "paymentIntentId", title: "Stripe Payment Reference", type: "string" },
+            { name: "at", title: "Ordered On", type: "datetime" },
+          ],
+          preview: {
+            select: { qty: "qty", state: "state", at: "at" },
+            prepare({ qty, state, at }) {
+              const when = at ? new Date(at).toLocaleDateString() : "";
+              return {
+                title: `${qty || 0} ${qty === 1 ? "copy" : "copies"} — ${
+                  state === "pending" ? "AWAITING YOUR APPROVAL" : "Paid"
+                }`,
+                subtitle: when,
+              };
+            },
+          },
+        },
+      ],
     },
     {
       name: "orderState",
@@ -222,14 +280,29 @@ export default {
       orderState: "orderState",
       price: "price",
       paymentMode: "paymentMode",
+      editionSize: "editionSize",
+      editionOrders: "editionOrders",
     },
-    prepare({ title, category, media, sold, orderState, price, paymentMode }) {
+    prepare({ title, category, media, sold, orderState, price, paymentMode, editionSize, editionOrders }) {
       let mark = "";
-      if (orderState === "pending") mark = " — NEEDS YOUR APPROVAL";
+      let stock = null;
+
+      if (typeof editionSize === "number") {
+        const orders = Array.isArray(editionOrders) ? editionOrders : [];
+        const taken = orders.reduce((n, o) => n + (o?.qty || 0), 0);
+        const left = Math.max(0, editionSize - taken);
+        const waiting = orders.some((o) => o?.state === "pending");
+        stock = `${left} of ${editionSize} left`;
+
+        if (waiting) mark = " — NEEDS YOUR APPROVAL";
+        else if (sold) mark = " — Pulled from shop";
+        else if (left === 0) mark = " — Sold out";
+        else if (paymentMode === "approval") mark = " — Ask me first";
+      } else if (orderState === "pending") mark = " — NEEDS YOUR APPROVAL";
       else if (sold) mark = " — Sold";
       else if (paymentMode === "approval") mark = " — Ask me first";
 
-      const bits = [category, typeof price === "number" ? `$${price}` : null].filter(Boolean);
+      const bits = [category, typeof price === "number" ? `$${price}` : null, stock].filter(Boolean);
 
       return {
         title: `${title}${mark}`,
