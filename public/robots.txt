@@ -2,6 +2,7 @@
 
 User-agent: *
 Disallow: /concepts/
+Disallow: /downloads/
 Allow: /
 
 Sitemap: https://visualfrequenciesstudios.com/sitemap.xml

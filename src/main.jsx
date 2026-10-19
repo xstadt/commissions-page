@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
 import ConceptReview from './ConceptReview.jsx'
+import DownloadPage from './DownloadPage.jsx'
 
 // Concept review pages live at /concepts/<slug>.
 //
@@ -11,10 +12,15 @@ import ConceptReview from './ConceptReview.jsx'
 // Everything else falls through to App exactly as before.
 const conceptMatch = window.location.pathname.match(/^\/concepts\/([a-z0-9-]+)\/?$/i)
 
+// Customer download pages live at /downloads/<slug>, mounted the same way.
+const downloadMatch = window.location.pathname.match(/^\/downloads\/([a-z0-9-]+)\/?$/i)
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     {conceptMatch
       ? <ConceptReview slug={conceptMatch[1].toLowerCase()} />
-      : <App />}
+      : downloadMatch
+        ? <DownloadPage slug={downloadMatch[1].toLowerCase()} />
+        : <App />}
   </StrictMode>,
 )

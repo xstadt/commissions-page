@@ -23,6 +23,7 @@ export default defineConfig({
              S.documentTypeListItem('galleryItem').title('Gallery'),
              S.divider(),
              S.documentTypeListItem('conceptReview').title('Concept Reviews'),
+             S.documentTypeListItem('clientDownload').title('Client Downloads'),
       ]),
     }),
   ],
