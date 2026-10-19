@@ -3,6 +3,7 @@ import productCategory from './productCategory';
 import galleryItem from './galleryItem';
 import siteSettings from './siteSettings';
 import conceptReview from './conceptReview';
+import clientDownload from './clientDownload';
 
 export const schemaTypes = [
   product,
@@ -10,4 +11,5 @@ export const schemaTypes = [
   galleryItem,
   siteSettings,
   conceptReview,
+  clientDownload,
 ];
