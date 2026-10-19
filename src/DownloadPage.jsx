@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { downloadZip } from "client-zip";
+import logo from "./logo.png";
 import { client } from "./sanityClient";
 
 /*
@@ -95,6 +96,11 @@ const STYLES = `
     max-width: 760px; margin: 0 auto;
   }
   .dl-root * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  .dl-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 40px; }
+  .dl-header a { display: inline-flex; align-items: center; gap: 14px; text-decoration: none; color: var(--text-dim); font-size: 13px; font-weight: 500; transition: color .2s; }
+  .dl-header a:hover { color: var(--text); }
+  .dl-header img { height: 28px; width: auto; display: block; }
 
   .dl-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 12px; }
   .dl-title { font-size: clamp(32px, 8vw, 52px); font-weight: 800; line-height: 1.1; letter-spacing: -1.5px; margin-bottom: 14px; }
@@ -200,11 +206,24 @@ function Folder({ folder }) {
   );
 }
 
+// Same logo as the site's nav. Clicking it goes to the main site.
+function Header() {
+  return (
+    <header className="dl-header">
+      <a href="/" aria-label="Visual Frequencies Studios — back to the site">
+        <img src={logo} alt="Visual Frequencies Studios" />
+      </a>
+      <a href="/">Visit the store →</a>
+    </header>
+  );
+}
+
 function Message({ title, body }) {
   return (
     <div className="dl-root">
       <style>{STYLES}</style>
-      <div className="dl-card" style={{ marginTop: "18vh", textAlign: "center" }}>
+      <Header />
+      <div className="dl-card" style={{ marginTop: "10vh", textAlign: "center" }}>
         <h1 className="dl-title" style={{ fontSize: 28, letterSpacing: -0.5 }}>{title}</h1>
         <p>{body}</p>
       </div>
@@ -261,6 +280,7 @@ export default function DownloadPage({ slug }) {
     return (
       <div className="dl-root">
         <style>{STYLES}</style>
+      <Header />
         <div className="dl-skel" style={{ height: 14, width: "30%", marginBottom: 14 }} />
         <div className="dl-skel" style={{ height: 48, width: "60%", marginBottom: 30 }} />
         <div className="dl-skel" style={{ height: 90, marginBottom: 14 }} />
@@ -275,6 +295,7 @@ export default function DownloadPage({ slug }) {
   return (
     <div className="dl-root">
       <style>{STYLES}</style>
+      <Header />
       <div className="dl-eyebrow">Your files</div>
       <h1 className="dl-title"><span className="flow">{data.clientName}</span></h1>
       <p className="dl-sub">
