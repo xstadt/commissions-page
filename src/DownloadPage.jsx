@@ -25,11 +25,7 @@ const liveClient = client.withConfig({ useCdn: false });
 const FILE = `{ "name": asset->originalFilename, "url": asset->url, "size": asset->size }`;
 const QUERY = `*[_type == "clientDownload" && slug.current == $slug][0]{
   clientName, status, message,
-  folders[]{
-    name,
-    "files": files[]${FILE},
-    "subfolders": subfolders[]{ name, "files": files[]${FILE} }
-  }
+  folders[]{ name, "files": files[]${FILE} }
 }`;
 
 const fmtSize = (n) => {
@@ -40,33 +36,20 @@ const fmtSize = (n) => {
   return `${n.toFixed(n >= 100 ? 0 : 1)} ${units[i]}`;
 };
 
-// Sanity returns folders as arrays; the page wants a tree it can walk.
 // Folder and file names come from the artist, so strip path separators.
 const clean = (s) => String(s || "").replace(/[\\/]+/g, "-").trim();
-const toFiles = (list) => (list || []).filter((f) => f?.url).map((f) => ({ ...f, name: clean(f.name) || "file" }));
 
-function buildTree(folders) {
+function buildFolders(folders) {
   return (folders || []).map((f) => ({
     name: clean(f.name) || "Folder",
-    files: toFiles(f.files),
-    folders: (f.subfolders || []).map((s) => ({
-      name: clean(s.name) || "Subfolder",
-      files: toFiles(s.files),
-      folders: [],
-    })),
+    files: (f.files || [])
+      .filter((x) => x?.url)
+      .map((x) => ({ ...x, name: clean(x.name) || "file" })),
   }));
 }
 
-const allFiles = (node) => [...node.files, ...node.folders.flatMap(allFiles)];
-
-// Give every file its path inside the zip, e.g. "Cover/Alternates/layer1.psd".
-function withPaths(node, prefix) {
-  const base = prefix ? `${prefix}/${node.name}` : node.name;
-  return [
-    ...node.files.map((f) => ({ ...f, zipPath: `${base}/${f.name}` })),
-    ...node.folders.flatMap((n) => withPaths(n, base)),
-  ];
-}
+// Give every file its path inside the zip, e.g. "Cover/layer1.psd".
+const withPaths = (folder) => folder.files.map((f) => ({ ...f, zipPath: `${folder.name}/${f.name}` }));
 
 async function saveZip(name, entries, onProgress) {
   // Files stream from storage into the zip. With the File System Access
@@ -142,18 +125,16 @@ const STYLES = `
   .dl-zip-error { font-size: 12px; color: var(--dusty-rose); text-align: right; }
 
   .dl-folder { border: 1px solid var(--border); border-radius: 20px; background: var(--surface); margin-bottom: 14px; overflow: hidden; }
-  .dl-folder .dl-folder { margin: 10px 0 0; border-radius: 14px; background: transparent; }
   .dl-folder-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px; flex-wrap: wrap; }
   .dl-toggle { display: flex; align-items: baseline; gap: 10px; background: none; border: none; color: inherit; font: inherit; cursor: pointer; text-align: left; flex: 1; min-width: 0; flex-wrap: wrap; }
   .dl-chev { display: inline-block; color: var(--text-dim); transition: transform .15s; width: 10px; }
   .dl-chev.dl-open { transform: rotate(90deg); }
   .dl-folder-name { font-weight: 700; word-break: break-word; }
-  .dl-top > .dl-folder-head .dl-folder-name { font-size: 17px; }
+  .dl-folder-name { font-size: 17px; }
   .dl-folder-body { padding: 0 18px 16px; }
   .dl-files { list-style: none; }
   .dl-file { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-top: 1px solid var(--border); }
   .dl-files > .dl-file:first-child { border-top: none; }
-  .dl-folder-body > .dl-folder + .dl-files > .dl-file:first-child { border-top: 1px solid var(--border); margin-top: 10px; }
   .dl-file-name { flex: 1; min-width: 0; font-size: 14px; word-break: break-word; }
   .dl-file-size { font-size: 12px; color: var(--text-dim); white-space: nowrap; }
   @media (max-width: 480px) { .dl-file { flex-wrap: wrap; } .dl-file-name { flex-basis: 100%; } .dl-file-size { flex: 1; } }
@@ -201,29 +182,20 @@ function FileList({ files }) {
   );
 }
 
-function Folder({ node, parentPath, depth = 0 }) {
-  const [open, setOpen] = useState(depth === 0);
-  const files = allFiles(node);
-  const total = files.reduce((s, f) => s + (f.size || 0), 0);
-  const entries = withPaths(node, parentPath);
+function Folder({ folder }) {
+  const [open, setOpen] = useState(true);
+  const total = folder.files.reduce((s, f) => s + (f.size || 0), 0);
   return (
-    <div className={`dl-folder ${depth === 0 ? "dl-top" : ""}`}>
+    <div className="dl-folder">
       <div className="dl-folder-head">
         <button className="dl-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
           <span className={`dl-chev ${open ? "dl-open" : ""}`}>›</span>
-          <span className="dl-folder-name">{node.name}</span>
-          <span className="dl-meta">{files.length} file{files.length === 1 ? "" : "s"} · {fmtSize(total)}</span>
+          <span className="dl-folder-name">{folder.name}</span>
+          <span className="dl-meta">{folder.files.length} file{folder.files.length === 1 ? "" : "s"} · {fmtSize(total)}</span>
         </button>
-        {files.length > 0 && <ZipButton label="Download folder" name={node.name} entries={entries} />}
+        {folder.files.length > 0 && <ZipButton label="Download folder" name={folder.name} entries={withPaths(folder)} />}
       </div>
-      {open && (
-        <div className="dl-folder-body">
-          {node.folders.map((sub) => (
-            <Folder key={sub.name} node={sub} parentPath={parentPath ? `${parentPath}/${node.name}` : node.name} depth={depth + 1} />
-          ))}
-          <FileList files={node.files} />
-        </div>
-      )}
+      {open && <div className="dl-folder-body"><FileList files={folder.files} /></div>}
     </div>
   );
 }
@@ -274,7 +246,7 @@ export default function DownloadPage({ slug }) {
     return () => { cancelled = true; };
   }, [slug]);
 
-  const tree = useMemo(() => buildTree(data?.folders), [data]);
+  const folders = useMemo(() => buildFolders(data?.folders), [data]);
 
   if (phase === "missing") {
     return <Message title="Nothing here" body="This link isn't valid. Double-check that you copied the whole link, or ask for it to be sent again." />;
@@ -297,7 +269,7 @@ export default function DownloadPage({ slug }) {
     );
   }
 
-  const everything = tree.flatMap((n) => withPaths(n, ""));
+  const everything = folders.flatMap(withPaths);
   const total = everything.reduce((s, f) => s + (f.size || 0), 0);
 
   return (
@@ -320,7 +292,7 @@ export default function DownloadPage({ slug }) {
             </div>
             <ZipButton primary label="Download all" name={`${clean(data.clientName)} - files`} entries={everything} />
           </div>
-          {tree.map((node) => <Folder key={node.name} node={node} parentPath="" />)}
+          {folders.map((folder, i) => <Folder key={`${i}-${folder.name}`} folder={folder} />)}
         </>
       )}
     </div>

@@ -16,14 +16,6 @@ import DownloadLink from '../components/DownloadLink';
 // engines.
 // ==========================================
 
-const filesField = {
-  name: 'files',
-  title: 'Files',
-  type: 'array',
-  description: 'Drag files in here — you can drop a whole selection at once.',
-  of: [{ type: 'file' }],
-};
-
 export default {
   name: 'clientDownload',
   title: 'Client Downloads',
@@ -119,42 +111,19 @@ export default {
               description: 'What the customer sees, e.g. "Album Cover — Layers".',
               validation: (Rule) => Rule.required(),
             },
-            filesField,
             {
-              name: 'subfolders',
-              title: 'Subfolders',
+              name: 'files',
+              title: 'Files',
               type: 'array',
-              description: 'Optional. Group files inside this folder (e.g. "Alternate versions").',
-              of: [
-                {
-                  type: 'object',
-                  name: 'downloadSubfolder',
-                  title: 'Subfolder',
-                  fields: [
-                    {
-                      name: 'name',
-                      title: 'Subfolder Name',
-                      type: 'string',
-                      validation: (Rule) => Rule.required(),
-                    },
-                    filesField,
-                  ],
-                  preview: {
-                    select: { title: 'name', files: 'files' },
-                    prepare: ({ title, files }) => ({
-                      title: title || 'Untitled subfolder',
-                      subtitle: `${files?.length || 0} file(s)`,
-                    }),
-                  },
-                },
-              ],
+              description: 'Drag files in here — you can drop a whole selection at once.',
+              of: [{ type: 'file' }],
             },
           ],
           preview: {
-            select: { title: 'name', files: 'files', subs: 'subfolders' },
-            prepare: ({ title, files, subs }) => ({
+            select: { title: 'name', files: 'files' },
+            prepare: ({ title, files }) => ({
               title: title || 'Untitled folder',
-              subtitle: `${files?.length || 0} file(s)${subs?.length ? ` · ${subs.length} subfolder(s)` : ''}`,
+              subtitle: `${files?.length || 0} file(s)`,
             }),
           },
         },
